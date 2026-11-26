@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 const CORE_RULES = [
   'dev-workflow-details',
   'subagent-dispatch',
+  'workflow-orchestration',
   'file-structure',
   'memory-systems',
   'design-detail',
@@ -271,7 +272,7 @@ export function runDoctor(rawTarget, { jsonMode = false } = {}) {
     ok('安装事务状态干净（无残留 install.marker）');
   }
 
-  // ② .cac/rules/AGENTS.md 主控宪法（严禁含任何 YAML frontmatter）与 6 核心按需细则存在
+  // ② .cac/rules/AGENTS.md 主控宪法（严禁含任何 YAML frontmatter）与 7 核心按需细则存在
   const rulesDir = path.join(root, '.cac', 'rules');
   if (fs.existsSync(rulesDir) && fs.statSync(rulesDir).isDirectory()) {
     ok('.cac/rules 目录存在');

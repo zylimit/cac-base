@@ -4,13 +4,15 @@ import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  REPO_ROOT,
   HARNESS_ENTRY,
   mkTmpRepo,
   cleanupTmp,
   writeFiles,
+  gitIn,
   runNode,
 } from './helpers.mjs';
-import { gateMode, readSession, MAX_FAST_SECONDS } from '../hooks/lib/tier.mjs';
+import { effectiveTier, gateMode, readSession, MAX_FAST_SECONDS } from '../hooks/lib/tier.mjs';
 
 test('tier validate passes on default profile and rejects non-monotonic hook rows', () => {
   const dir = mkTmpRepo();
@@ -236,5 +238,86 @@ test('corrupt tier.json and profile.json fall back safely and record entries in 
     assert.equal(kinds.has('tier'), true);
   } finally {
     cleanupTmp(dir);
+  }
+});
+
+test('[Regression v1.1.1] outer parent .git with dirty .github/workflows/ci.yml and sibling files never raises uninitialized child cac-dryrun to strict', () => {
+  const parent = mkTmpRepo({
+    prefix: 'cac-tier-outer-git-',
+    withProfile: false,
+    withSettings: false,
+    files: {
+      'other-proj/index.ts': 'export const base = 1;\n',
+      '.github/workflows/ci.yml': 'name: parent-ci\n',
+    },
+  });
+  try {
+    // Dirty parent/.github/workflows/ci.yml (matches raise.paths `.github/**`!) and parent/other-proj/dirty.ts
+    writeFiles(parent, {
+      '.github/workflows/ci.yml': 'name: parent-ci-uncommitted-dirty\n',
+      'other-proj/dirty.ts': 'export const siblingDirty = true;\n',
+    });
+
+    // Install cac-base into parent/cac-dryrun WITHOUT running `git init` inside cac-dryrun
+    const childDir = path.join(parent, 'cac-dryrun');
+    const cacCli = path.join(REPO_ROOT, 'scripts', 'cac-base.mjs');
+    const inst = runNode(cacCli, ['install', '--target', childDir]);
+    assert.equal(inst.status, 0, `install into childDir failed: ${inst.stderr}`);
+    assert.equal(fs.existsSync(path.join(childDir, '.git')), false);
+
+    // 1. Direct programmatic effectiveTier & gateMode in childDir must remain standard (source: 'default')
+    const eff = effectiveTier({ projectDir: childDir });
+    assert.equal(eff.tier, 'standard', `effectiveTier must NOT be raised to strict by parent .git or untracked .cac/*: ${JSON.stringify(eff)}`);
+    assert.equal(eff.source, 'default');
+    assert.equal(eff.raisedBy, undefined);
+    assert.equal(gateMode('stop-gate', { projectDir: childDir }), 'advise');
+    assert.equal(gateMode('three-file-sync-gate', { projectDir: childDir }), 'advise');
+
+    // 2. CLI `harness.mjs tier status` in childDir (with CODEAGENT3_PROJECT_DIR=childDir)
+    const childHarness = path.join(childDir, '.cac', 'harness', 'harness.mjs');
+    const stEnv = runNode(childHarness, ['tier', 'status'], { cwd: childDir, projectDir: childDir });
+    assert.equal(stEnv.status, 0, `tier status failed: ${stEnv.stderr}`);
+    assert.equal(stEnv.json?.tier, 'standard');
+    assert.equal(stEnv.json?.source, 'default');
+    assert.equal(stEnv.json?.raisedBy, undefined);
+    assert.equal(stEnv.json?.hooks?.['stop-gate'], 'advise');
+    assert.equal(stEnv.json?.hooks?.['three-file-sync-gate'], 'advise');
+
+    // 3. CLI `harness.mjs tier status` & `diff-hash` from nested subdir with CODEAGENT3_PROJECT_DIR unset (projectDir: null)
+    const nestedCwd = path.join(childDir, 'src', 'feature');
+    fs.mkdirSync(nestedCwd, { recursive: true });
+    const stNoEnv = runNode(childHarness, ['tier', 'status'], { cwd: nestedCwd, projectDir: null });
+    assert.equal(stNoEnv.status, 0);
+    assert.equal(stNoEnv.json?.tier, 'standard', 'nested cwd without env vars must lock onto childDir/.cac and stay standard');
+    assert.equal(stNoEnv.json?.source, 'default');
+    assert.equal(stNoEnv.json?.raisedBy, undefined);
+
+    const dhNoEnv = runNode(childHarness, ['diff-hash'], { cwd: nestedCwd, projectDir: null });
+    assert.equal(dhNoEnv.status, 0);
+    assert.equal(dhNoEnv.json?.nonGit, true, 'uninitialized childDir inside outer parent .git must be treated as nonGit');
+
+    // 4. Contrast: intentionally tracked monorepo subpackage ignores outer sibling/.github dirty files,
+    //    yet raises to strict when its OWN tracked .cac/rules/AGENTS.md is modified
+    const trackedSub = path.join(parent, 'packages', 'tracked-sub');
+    assert.equal(runNode(cacCli, ['install', '--target', trackedSub]).status, 0);
+    gitIn(parent, ['add', 'packages/tracked-sub']);
+    gitIn(parent, ['commit', '-m', 'chore(monorepo): track intentional subpackage']);
+    // Note: parent/.github/workflows/ci.yml and parent/other-proj/dirty.ts are STILL dirty in parent!
+    const trackedHarness = path.join(trackedSub, '.cac', 'harness', 'harness.mjs');
+    const subClean = runNode(trackedHarness, ['tier', 'status'], { cwd: trackedSub, projectDir: trackedSub });
+    assert.equal(subClean.status, 0);
+    assert.equal(subClean.json?.tier, 'standard', 'outer .github/workflows/ci.yml must not raise tracked sibling subpackage');
+    assert.equal(subClean.json?.source, 'default');
+
+    writeFiles(trackedSub, {
+      '.cac/rules/AGENTS.md': fs.readFileSync(path.join(trackedSub, '.cac', 'rules', 'AGENTS.md'), 'utf8') + '\n<!-- local subpackage edit -->\n',
+    });
+    const subRaised = runNode(trackedHarness, ['tier', 'status'], { cwd: trackedSub, projectDir: trackedSub });
+    assert.equal(subRaised.status, 0);
+    assert.equal(subRaised.json?.tier, 'strict');
+    assert.equal(subRaised.json?.source, 'raise');
+    assert.deepEqual(subRaised.json?.raisedBy, ['.cac/rules/AGENTS.md']);
+  } finally {
+    cleanupTmp(parent);
   }
 });

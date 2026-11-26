@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  projectDir, readStdinJson, readTextFile, git, porcelainZ, classifyChange, relToProject,
+  projectDir, readStdinJson, readTextFile, gitStateOf, porcelainZ, classifyChange,
   emit, gateModeOf, runFailClosed,
 } from './lib/io.mjs';
 import { gateLog } from './lib/gatelog.mjs';
@@ -79,9 +79,8 @@ runFailClosed(async () => {
   const dds = ddMode !== 'off' ? designDetails(root) : [];
   if (!c12 && dds.length === 0) return;
 
-  if (git(['rev-parse', '--is-inside-work-tree'], { cwd: root }).status !== 0) return;
-
-  const prefix = git(['rev-parse', '--show-prefix'], { cwd: root }).stdout.replace(/\r?\n$/, '');
+  const gs = gitStateOf(root);
+  if (!gs.inGit || (!gs.ownRepo && !gs.trackedSubdir)) return;
 
   let codeDirty = false;
   let progDirty = false;
@@ -90,9 +89,8 @@ runFailClosed(async () => {
   let firstCode = '';
   const changed = new Set();
 
-  const take = (p) => {
-    const rel = relToProject(p, prefix);
-    if (rel === null) return;
+  const take = (rel) => {
+    if (!rel) return;
     changed.add(rel);
     switch (classifyChange(rel)) {
       case 'progress': progDirty = true; break;

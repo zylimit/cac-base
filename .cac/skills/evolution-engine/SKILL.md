@@ -1,32 +1,72 @@
 ---
 name: evolution-engine
-description: 当会话触发进化催办或用户要求扫描规则毕业与技能优化建议时使用。由 evolution-runner 只读聚类 .cac/feedback/ 并生成提案。
+description: 当 session 初始化时自动触发，或用户说"帮我看看有没有该升级的规则"、"检查进化建议"时手动触发。由 evolution-runner sub-agent 调用。
 ---
 
 [任务]
-    扫描 `.cac/feedback/` 中尚未毕业的行为修正记录，通过**现有框架文本 Grep 查重 + 同族失败模式聚类 + 真实事故代价门槛**，识别三类进化提案（规则毕业 / Skill 段落优化 / 新 Skill 候选），经用户逐条拍板后落地并记入 `.cac/EVOLUTION.md` 台账。
+    扫描 .cac/feedback/ 中的积累，识别三类进化信号：
+    1. 规则毕业：未毕业、未跳过的 feedback 过现状核查与实证门槛 → 提议写进目标 skill / 规则（不按出现次数，见第一步）
+    2. Skill 优化：某 Skill 来源的未毕业 feedback 聚到同一个环节 → 提议调整 Skill 对应段落
+    3. 新 Skill 提议：某操作模式反复出现但无 Skill 覆盖 → 提议创建新 Skill
 
-[运行位置分流（防下游升级冲突！）]
-    - **在框架源仓（`cac-base`）运行**：若需汇总下游项目经验，先由主 Agent 运行 `node .cac/scripts/collect-feedback.mjs <下游项目路径...>` 收集条目（带 `origin` 来源），毕业提案直接落入本仓 `.cac/rules/AGENTS.md`、`.cac/rules/*.md` 或 `.cac/skills/*/SKILL.md`。
-    - **在下游业务项目运行**：下游项目的 `.cac/{rules,skills,agents}` 受 `FRAMEWORK-MANIFEST.json` 校验管理，直接涂改会在下次升级时产生冲突——因此通用 AI 方法类教训只标「待回流 `cac-base`」保留在 `.cac/feedback/`，仅项目私有约束落入 `progress.md` Pinned/Decisions 或 `domain/`。
+    有信号 → 生成提议返回给主 Agent，由用户确认后执行。
+    无信号 → 返回"无进化建议"。
 
-[四步只读扫描规程（由 `evolution-runner` 执行）]
-    1. **筛选待裁定候选**：读取 `.cac/feedback/FEEDBACK-INDEX.md` 与各条目 frontmatter，筛选 `graduated: false` 且 `skipped != true` 的条目。
-    2. **现状查重（Grep 实证，严禁凭印象）**：对每条候选在 `.cac/rules/AGENTS.md`、`.cac/rules/*.md`、`.cac/skills/*/SKILL.md`、`.cac/agents/*.md` 中检索核心规则是否已成文：
-       - 已完整成文 → 列为「既成事实核销」（附精确 `file:line`，直接标毕业不重复加字）；
-       - 部分成文 → 指明已覆盖处与缺失切口；
-       - 完全未成文 → 进入下一步实证门槛评估。
-    3. **同族聚类与实证代价门槛**：
-       - 将同一本质失败模式的不同表述归并同族计算（单条 `occurrences >= 3`、同族合计 `>= 3` 条，或单次已造成明确返工/空转/阻塞真事故的条目进入提案；仅有口头微调而无实际事故代价的标「暂不成文」避免规则膨胀）；
-       - 同一 `source_skill` 下 3 条以上未毕业条目指向同一薄弱环节 → 列为「Skill 优化提案」；
-       - 跨 3 条以上反复出现且无现有 Skill 覆盖的操作流 → 列为「新 Skill 候选」（确认后交 `/skill-builder` 创建）。
-    4. **结构化提案输出**：若无达标项直报「无进化建议」；若有达标项，按「规则毕业 / Skill 优化 / 新 Skill 提议 / 既成事实核销」分组列出目标文件、拟改摘要与一句可证伪理由交主 Agent 呈请用户逐条确认。
+    在哪儿跑决定毕业落在哪儿：
+    - 框架仓（cac-base）：扫之前先 `node .cac/scripts/collect-feedback.mjs <下游项目路径…>` 把下游项目的 feedback 收进来（frontmatter `origin:` 记来源项目），毕业改本仓的 SKILL.md / `.cac/rules/AGENTS.md`（或对应 `rules/*.md`），下游装新版自然带上。它末尾给每个项目多报一行「人读文档」的状态（几页、核对不一致几条、待更新几段、配置漏项几处、近 7 天提交前被拦几次），行首带 `!` 的是文档没跟上的项目——当成一条信号写进提议：先分清是那个项目没照流程做，还是流程文字或生成器有缺口。
+    - 下游项目：项目里的 skills / `.cac/rules/AGENTS.md` 是清单管的框架副本，往里写下次 setup 就旁落 `*.cac-base-new`——方法类教训（source_skill 非 N/A，或讲的是 AI 怎么问怎么做）只标「待回流 cac-base」留在 feedback，等框架仓收走；项目事实类进 progress.md Decisions，领域口径进 domain/。三个下游项目 35 份 feedback 三个月 0 毕业（2026-10-30 实数），就是落点没分清的样子。
 
-[用户拍板后的落账闭环（主 Agent 执行）]
-    用户逐条确认「采纳 / 跳过」后，主 Agent 执行：
-    1. 采纳项修改目标规则或 Skill 文件，将对应 `.cac/feedback/*.md` 的 `graduated` 置为 `true`；跳过项将 `skipped` 置为 `true`。
-    2. 同步更新 `.cac/feedback/FEEDBACK-INDEX.md` 行首状态前缀：`✅[已毕业] `、`⏭[已跳过] ` 或 `⏸[暂不成文] `。
-    3. 在 `.cac/EVOLUTION.md` 进化记录表追加一行（编号 `E-YYYYMMDD-NN`、来源、裁定、落点与依据）——**没有台账记录绝不静默改规则**。
+[扫描流程]
 
-[初始化]
-    检查当前是在主 Agent 编排入口（派发 `evolution-runner` 只读扫描）还是已在 `evolution-runner` 内部（直接执行 `[四步只读扫描规程]`）。
+    第一步：扫描毕业候选
+        读取 .cac/feedback/FEEDBACK-INDEX.md 定位所有 feedback 文件
+        读取每个文件的 frontmatter
+        筛选：graduated == false 且 skipped != true（不按出现次数——计数这条路试过，43 条里 39 条恒为 1，从没有人去加，2026-09-12 删掉了该字段）
+        每条先做**现状核查**再谈裁定：去 `.cac/rules/AGENTS.md` / `.cac/rules/*.md` / 相关 SKILL.md / agents 实际 grep 关键词，判三种结果——已逐字成文（哪怕措辞不同）→ 以既成事实毕业，点名落在哪个文件哪一段并给行号，不新增任何东西；部分成文 → 点名已成文的那半与缺的那半；压根没有 → 才进落地提案。
+        **实证门槛**：提落地之前问一句「这条实际造成过什么代价」——feedback 正文里有真事故（返工、空转、被冻结的功能、重复争议）才提；只有「用户当场纠正」而没有代价记录的，判「暂不成文」并把理由写进该条 frontmatter 与索引，下次扫描不重新裁定。依据是 `.cac/rules/AGENTS.md`「闸靠数据留，不靠感觉留」——规则和闸同理，没有实证的规则只是又一条没人遵守的自觉条款。
+        确定毕业目标：
+        - source_skill 明确 → 毕业到对应 SKILL.md
+        - 涉及多个 Skill 或全局性 → 毕业到 `.cac/rules/AGENTS.md`（或对应 `.cac/rules/*.md`）
+
+    第二步：检查 Skill 优化信号
+        按 source_skill 分组未毕业 feedback，3 条以上指向同一个环节（按主题聚类判，不按条数堆——已毕业条目不计，那些教训已落进规则，再算进来只会重复提议）→ 提议改该 Skill 的对应段落。
+        scores 字段不再当信号：下游三个项目 35 份 feedback 没有一份填过（2026-10-30 实数），靠它判「评分持续偏低」永远判不出来；模板里保留该字段只作记录。
+
+    第三步：检查新 Skill 信号
+        筛选：同族主题跨 3 条以上 feedback 反复出现，且不属于任何已有 Skill 的覆盖范围
+        → 标记为"新 Skill 候选"
+
+    第四步：生成提议
+        有信号 → 生成结构化提议（见 [提议格式]）
+        无信号 → 返回"无进化建议"
+
+[提议格式]
+    "**进化建议**（共 N 条）
+
+     **规则毕业**（X 条）
+     1. [feedback 标题]（来源：[source_skill]；origin：[下游项目，本仓自产写 local]）
+        建议写入：[目标文件] 的 [目标位置]
+        内容摘要：[一句话]
+        -- 确认 / 跳过
+
+     **Skill 优化**（X 条）
+     1. [Skill 名称]：[N] 条未毕业 feedback 指向 [环节]
+        优化建议：[具体建议]
+        -- 确认 / 跳过
+
+     **新 Skill 提议**（X 条）
+     1. [操作模式描述]：跨 [N] 条 feedback 反复出现
+        -- 确认创建 / 跳过"
+
+[确认后执行]
+    用户逐条确认或跳过：
+    - 规则毕业 → 将 feedback 内容写入目标 SKILL.md 或 `.cac/rules/AGENTS.md`（或对应 `.cac/rules/*.md`），标记 graduated: true；带 origin 的条目在回执里列出来源项目与文件名，由人回下游把那份也标毕业（下游副本不会自动同步）
+    - Skill 优化 → 修改对应 SKILL.md
+    - 新 Skill → 调用 skill-builder 创建
+    - 跳过 → 标记 skipped: true，不再重复提议
+    - 索引同步：FEEDBACK-INDEX.md 里毕业的行首加 `✅[已毕业] `、跳过的加 `⏭[已跳过] `、暂不成文的加 `⏸[暂不成文] `；三种前缀 session-start 都计总数不计待处理，开场那句「N 条待处理」只数还没裁过的
+
+[返回格式]
+    返回给主 Agent：
+    - 有提议："有 N 条进化建议待处理"+ 完整提议内容
+    - 无提议："无进化建议"

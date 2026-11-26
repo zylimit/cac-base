@@ -1,25 +1,27 @@
 ---
 name: recap-project
-description: 当用户敲 /recap-project、说“恢复上下文/现在做到哪了”，或新会话启动与压缩后接续项目状态时使用。同步读取活文档三件套汇报现状。
+description: 当用户敲 /recap-project、说 recap 或"恢复上下文"、"现在做到哪了"，或新 session 开头、/clear 之后要接上项目状态时使用。
 ---
 
 [任务]
-    快速、准确地从磁盘活文档恢复项目完整上下文，向用户汇报当前进度、有效硬约束、断点与下一步可执行指令。除超线时先触发一次 `/archive` 外，全程只读不改文件、不派子代理。
+    恢复项目上下文：把磁盘上的项目记忆读回来，回用户一段「现在在哪」。除归档线已过时先跑一次 /archive 外不改任何文件，不派 Sub-Agent。
+    接住就干——不开场白、不先复述本 skill 会做什么。
 
-[读取顺序与三文件同步铁律]
-    1. **先跑机器状态探针**：若存在 `.cac/scripts/project-status.mjs`，先运行 `node .cac/scripts/project-status.mjs` 获取当前阶段与活文档体积；若第二行提示某份活文档已超归档线，先按 `/archive` 跑脚本瘦身后再往下读，避免被巨量陈旧历史淹没上下文。
-    2. **同步精读现行三件套**（存在即读，缺哪份标未创建；**只读 `progress.md` 而不看需求与变更史不算完成恢复！不读 `progress.archive.md`**）：
-       - `progress.md` → 重点提取 `Pinned`、`Decisions`（未标被取代的现行条目）、`In Progress` 当前断点、未关闭 `TODO`；
-       - `Product-Spec.md` → 掌握现行需求边界与核心规则；
-       - `Product-Spec-CHANGELOG.md` → 掌握最近一次需求演进方向与下游待同步项；
-       - 辅助检查：`git status --short` 与当前分支状态。
+[为什么叫这个名字]
+    宿主 CLI 可能自带内建 `/recap`（给当前会话出一行摘要），带斜杠的 `/recap` 可能被内建命令接走、到不了模型。本 skill 是框架自己的入口，名字避开宿主内建命令。不带斜杠的 recap 照常可用，走的也是这里。
 
-[汇报结构（严格区分 `[确认]` / `[推断]` / `[建议]`）]
-    按 `.cac/rules/dev-workflow-details.md` 标准进度面板呈现，并补充四项精炼摘要：
-    1. **现在在哪**：`project-status.mjs` 阶段判定 + 当前 Git 分支/工作树干净度 + 最近完成项 + 当前断点位置；
-    2. **生效硬约束与关键决策**：仅提炼直接约束下一步工作的 `Pinned` 与现行 `Decisions`；
-    3. **待办与账实偏差预警**：列出最高优 `OPEN/DOING` TODO，并主动点出任何账实不符（如工作树有未提交代码但断点未记、Phase 实已做完未标 `✅`、待审标记 `.cac/.needs-review` 未清）；
-    4. **下一步具体建议**：给出 1 条立即可执行的下一步命令或动作供用户确认。
+[读什么]
+    先跑 `node .cac/scripts/project-status.mjs`（脚本不在就跳过）：第一行是「现在到哪」，第二行是三份活文档各有多重。第二行报了待归档，先按 /archive 搬完再往下读——带着几百 KB 的历史读 recap，读不完也记不住。
+    存在即读，不存在的跳过不报错：
+    - progress.md → Pinned、现存 Decisions、当前断点、TODO；文件过大读不完时按区块分段读，不拿前半截当全文
+    - Product-Spec.md → 需求现在长什么样
+    - Product-Spec-CHANGELOG.md → 需求最近怎么变的
+    不读 progress.archive.md。只读 progress.md 不算恢复完成。
 
-[初始化]
-    立即执行 `[读取顺序与三文件同步铁律]`，无需寒暄开场白。
+[回什么]
+    - 现在在哪：project-status 的第一行原样带上，再补分支与工作树状态、最近一批完成的事、断点停在哪
+    - 仍在生效的约束：Pinned 与近期 Decisions 里影响下一步的那几条，不全文照抄
+    - 还开着的：未关闭的 TODO，按优先级
+    - 对不上的地方：断点段过期、工作树有未提交改动而 progress.md 没记、Spec 条目带修订史或 Phase 做完没标 `✅`（project-status 第二行与 /archive 报的）——看到就点名
+    - 下一步：给一条建议，等用户定
+    用户确认的事实、自己的推断、建议分开说。三份文件都不存在时回一句「还没有项目记忆」，转 [项目状态检测与路由]。

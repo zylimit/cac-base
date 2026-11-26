@@ -1,21 +1,16 @@
 ---
 name: archive
-description: 当用户敲 /archive 或提示 progress.md、DEV-PLAN.md 过长需要归档瘦身时使用。调用纯 Node 归档脚本无损搬迁历史记录。
+description: 当用户敲 /archive，或说"归档 progress"、"progress 太长了收一下"、"DEV-PLAN 太长了"时使用。
 ---
 
 [任务]
-    将 `progress.md` 中超阈值的历史记录原文无损搬迁至 `progress.archive.md`，并将 `DEV-PLAN.md` 中过多已完成 Phase 原文无损搬迁至 `DEV-PLAN.archive.md`（保留 REQ 覆盖指针）。机械搬运一律优先交由纯 Node 脚本执行，杜绝大模型手敲搬运丢字。
+    /archive 的入口：把 progress.md 里过线的历史条目原文搬进 progress.archive.md，把 DEV-PLAN.md 里做完的 Phase 原文搬进 DEV-PLAN.archive.md。搬运是机械活，交给脚本，不让模型逐字敲。
 
-[工作流程]
-    1. **同轮先后顺序**：若本轮还有未落账的进度，先走 `/record` 落账，再执行本归档流程。
-    2. **归档 `progress.md`**：
-       - 若存在 `.cac/scripts/progress-archive.mjs`，主 Agent 直接运行 `node .cac/scripts/progress-archive.mjs`，读取输出与退出码（未达归档线则如实回复当前条数与体积，不硬搬）；
-       - 仅在脚本不存在的裸环境下，才派 `progress-recorder`（`mode: archive`）按「先写归档、逐条搜到核实、再删正文」规程搬运。
-    3. **归档 `DEV-PLAN.md` 并复核双向覆盖**：
-       - 若项目存在 `DEV-PLAN.md` 且存在 `.cac/scripts/plan-archive.mjs`，运行 `node .cac/scripts/plan-archive.mjs`；
-       - 只要发生了 Phase 搬迁，**必须紧接着运行 `node .cac/scripts/plan-lint.mjs`** 校验退出码仍为 `0`（确认 `## 已归档 Phase` 指针行的 `（REQ：…）` 后缀完整承接了需求覆盖）；
-       - 若脚本提示存在「排在已完成 Phase 之前却未标 `✅` 的 Phase」或「非整数 Phase 编号」，原样列出请用户核定，严禁私自篡改未标 `✅` 的 Phase。
-    4. **保护红线**：`progress.md` 的 `Pinned` 与未关闭 `TODO`、`DEV-PLAN.md` 中未标 `✅` 的 Phase 与 `## 范围外（本次不计划）` 永远不搬；`*.archive.md` 只增不删。
+[怎么做]
+    - `.cac/scripts/progress-archive.mjs` 在 → 主 Agent 直接跑 `node .cac/scripts/progress-archive.mjs`，读完输出与退出码，回用户搬了哪几组、各搬几条
+    - 项目有 DEV-PLAN.md 且 `.cac/scripts/plan-archive.mjs` 在 → 再跑 `node .cac/scripts/plan-archive.mjs`；它搬过东西就接着跑 `node .cac/scripts/plan-lint.mjs DEV-PLAN.md <需求来源路径>`，仍过才算搬完。脚本报「没标 ✅ 的 Phase：N 个」时把数字带给用户——排在已完成的 Phase 之前却没标 `✅` 的，脚本不搬；是做完没标还是跳过没做要逐个核实，核实后补标再跑；报「编号认不出的 Phase 标题：N 个」的同样带给用户，那是 `## Phase 5.x` 这类编号不是整数的标题，改成整数才搬得动
+    - 脚本不在（老安装）→ 派 progress-recorder（显式传入目标文件路径与归档指令），mode 传 archive，按 .cac/skills/progress-recorder/SKILL.md [快照归档] 手工搬；DEV-PLAN 没有脚本就不搬，提醒升级框架
+    - 没有哪组过线 → 回一句「没到归档线」并报当前条数与体积，不硬搬
 
-[初始化]
-    执行 `[工作流程]`，逐项向用户汇报实际搬迁条数与瘦身后的活文档状态。
+[边界]
+    触发线、保留线、先写归档后删正文的顺序都以脚本与 progress-recorder SKILL.md 为准，本 skill 不复述。Pinned、未关闭的 TODO、没带 `✅` 的 Phase 永不搬。同轮同时要 /record 与 /archive → 先 record 再 archive。

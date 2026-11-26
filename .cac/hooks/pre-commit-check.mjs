@@ -9,7 +9,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { projectDir, readStdinJson, git, run, say, errText, gateModeOf, toPosix } from './lib/io.mjs';
+import { projectDir, readStdinJson, git, gitStateOf, run, say, errText, gateModeOf, toPosix } from './lib/io.mjs';
 import { gateLog } from './lib/gatelog.mjs';
 import {
   harnessEnabled, harnessExtInstalled, harnessExtMissingNotice, harnessRun, rcInContract, errHead,
@@ -83,15 +83,31 @@ async function main() {
   if (!COMMIT_CMD_RE.test(cmd)) return;
 
   const root = projectDir(ev);
+  const gs = gitStateOf(root);
+  if (!gs.inGit) return;
+
   const mode = await gateModeOf('pre-commit-check', root);
   let engineBroken = false;
   if (mode === 'off') return;
 
+  if (!gs.ownRepo && !gs.trackedSubdir) {
+    const boundaryMsg = '当前项目目录尚未独立执行 git init（检测到外层父目录存在 Git 仓库），已拦截向父目录越界 git commit；请先在本目录运行 git init。';
+    if (mode === 'advise') {
+      say(`[fast] ${boundaryMsg}`);
+      gateLog('pre-commit-check', `[fast] ${boundaryMsg}`, root);
+      return;
+    }
+    say(`❌ ${boundaryMsg}`);
+    gateLog('pre-commit-check', boundaryMsg, root);
+    process.exitCode = 2;
+    return;
+  }
+
   // 1. 人读工程文档重出与漂移检查
   if (refreshReadableDocs(root, mode)) process.exitCode = 2;
 
-  // 2. 读取本次暂存的新增/复制/修改/重命名文件（NUL 分隔防中文/空格截断）
-  const staged = git(['-c', 'core.quotePath=false', 'diff', '--cached', '--name-only', '-z', '--diff-filter=ACMR'], { cwd: root });
+  // 2. 读取本次暂存的新增/复制/修改/重命名文件（NUL 分隔防中文/空格截断；--relative 与 -- . 严锁当前项目边界）
+  const staged = git(['-c', 'core.quotePath=false', 'diff', '--cached', '--relative', '--name-only', '-z', '--diff-filter=ACMR', '--', '.'], { cwd: root });
   const files = staged.stdout.split('\0').map((s) => toPosix(s.trim())).filter(Boolean);
   if (staged.status !== 0 || files.length === 0) return;
 

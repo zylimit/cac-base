@@ -17,6 +17,7 @@ const RULES_DIR = '.cac/rules';
 const POINT_DIRS = [
   '.cac/hooks',
   '.cac/scripts',
+  '.cac/skills',
   '.cac/tests',
   '.cac/harness',
   'scripts',

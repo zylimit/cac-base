@@ -9,7 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { porcelainZ, toPosix } from './io.mjs';
+import { findCacProjectRoot, gitStateOf, isCacRuntimeState, porcelainZ, toPosix } from './io.mjs';
 
 export const TIERS = ['fast', 'standard', 'strict'];
 export const MAX_FAST_SECONDS = 8 * 3600;
@@ -86,14 +86,24 @@ const rootCache = new Map();
 function repoRootOf(dir) {
   if (rootCache.has(dir)) return rootCache.get(dir);
   let out = dir;
+  // dir 自身已存在 .cac 目录时直接锁死当前目录，绝不调 git rev-parse 跳往外层父目录
+  const directCac = dir ? findCacProjectRoot(dir, dir) : null;
+  if (directCac) {
+    rootCache.set(dir, directCac);
+    return directCac;
+  }
+  let topDir = null;
   try {
-    const top = spawnSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], {
+    const top = spawnSync('git', ['-C', dir, '-c', 'core.quotePath=false', 'rev-parse', '--show-toplevel'], {
       shell: false,
       windowsHide: true,
       encoding: 'utf8',
     });
-    if (top.status === 0 && String(top.stdout || '').trim()) out = String(top.stdout).trim();
-  } catch (_e) { /* keep dir */ }
+    if (top.status === 0 && String(top.stdout || '').trim()) topDir = String(top.stdout).trim();
+  } catch (_e) { /* keep null */ }
+  const cacAncestor = findCacProjectRoot(dir, topDir);
+  if (cacAncestor) out = cacAncestor;
+  else if (topDir) out = topDir;
   rootCache.set(dir, out);
   return out;
 }
@@ -101,15 +111,7 @@ function repoRootOf(dir) {
 function defaultRoot() {
   const env = process.env.CODEAGENT3_PROJECT_DIR || process.env.CAC_PROJECT_DIR;
   if (env && env.trim()) return env.trim();
-  try {
-    const top = spawnSync('git', ['rev-parse', '--show-toplevel'], {
-      shell: false,
-      windowsHide: true,
-      encoding: 'utf8',
-    });
-    if (top.status === 0 && String(top.stdout || '').trim()) return String(top.stdout).trim();
-  } catch (_e) { /* fallback cwd */ }
-  return process.cwd();
+  return repoRootOf(process.cwd());
 }
 
 const quarantined = new Set();
@@ -216,55 +218,23 @@ function globToRe(glob) {
   return new RegExp(`^${re}$`);
 }
 
-const STATE_PREFIXES = [
-  '.cac/.runtime/',
-  '.cac/evidence/',
-  '.cac/harness/receipts/',
-  '.cac/harness/waivers/',
-  '.cac/harness/trend/',
-  '.cac/harness/state/',
-  '.cac/harness/evidence/',
-  '.cac/agent-memory/',
-  '.cac/worktrees/',
-];
-const STATE_FILES = new Set([
-  '.cac/.needs-review',
-  '.cac/.needs-review.lock',
-  '.cac/.red-verified',
-  '.cac/.tdd-exempt',
-  '.cac/.tdd-gate-advised',
-  '.cac/.stop-gate-strikes',
-  '.cac/.stop-gate-advised',
-  '.cac/.three-file-sync-advised',
-  '.cac/.precompact-block-epoch',
-  '.cac/.subagent-reminded',
-  '.cac/.fast-mode',
-  '.cac/.static-gate',
-  '.cac/.degraded-review',
-  '.cac/.async-verify-last',
-  '.cac/signals.jsonl',
-  '.cac/settings.local.json',
-  '.cac/.credentials.json',
-]);
-
-function isRuntimeState(rawPath) {
-  const p = toPosix(rawPath);
-  if (STATE_FILES.has(p) || p.endsWith('/signals.jsonl')) return true;
-  return STATE_PREFIXES.some((pre) => p.startsWith(pre));
-}
-
 const dirtyCache = new Map();
 function dirtyPaths(root) {
   if (dirtyCache.has(root)) return dirtyCache.get(root);
-  const st = porcelainZ(root, ['-uall']);
+  const gs = gitStateOf(root);
   const out = [];
-  if (st.error && st.error.code === 'ENOENT' && !dirtyCache.has('__git_warned__')) {
+  if (gs.error && gs.error.code === 'ENOENT' && !dirtyCache.has('__git_warned__')) {
     dirtyCache.set('__git_warned__', true);
     process.stderr.write('[tier] 找不到 git，治理面自动升档本轮跳过（按当前档跑）\n');
   }
-  if (st.status === 0) {
-    for (const p of st.paths) {
-      if (!isRuntimeState(p)) out.push(p);
+  // 仅在当前目录拥有独立 .git，或为已被外层仓库索引追踪的有意子包时统计改动，
+  // 杜绝外层父目录误建 .git 时将兄弟项目改动或新建项目的未追踪 .cac/* 误判为家底改动升档。
+  if (gs.inGit && (gs.ownRepo || gs.trackedSubdir)) {
+    const st = porcelainZ(root, ['-uall']);
+    if (st.status === 0) {
+      for (const p of st.paths) {
+        if (!isCacRuntimeState(p)) out.push(p);
+      }
     }
   }
   dirtyCache.set(root, out);
@@ -339,7 +309,7 @@ function warnUnregistered(id) {
  * 优先级：BUILTIN_FLOOR / profile.floor → overrides → 档位表（含治理面自动升档）。
  */
 export function gateMode(id, ctx = {}) {
-  const root = ctx.projectDir || defaultRoot();
+  const root = repoRootOf(ctx.projectDir || defaultRoot());
   const { profile } = loadProfile(root);
   const guard = isGuard(id, profile);
 

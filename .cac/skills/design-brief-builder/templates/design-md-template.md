@@ -1,134 +1,183 @@
 ---
 name: design-md-template
-description: DESIGN.md 标准输出模板（对齐 Google DESIGN.md 规范、predev-lint.mjs 与 ui-slop-scan.mjs）。
+description: DESIGN.md 输出模板，按 Google DESIGN.md 开放规范（google-labs-code/design.md）写：YAML 前言放 token，正文八段按固定顺序写 prose；prose 是主体，token 是上下文。设计工具、`codeagent`、Cursor、Stitch 都能直接读。
 ---
 
 # DESIGN.md 输出模板
 
-文件名：`DESIGN.md`（放项目根目录）。
-- `predev-lint.mjs` 强制校验：
-  1. 顶部必须有 YAML frontmatter，且至少包含字符串类型的 `colors.primary` 与 `colors.surface`；
-  2. 正文花括号引用 `{token.path}` 必须在 YAML 前言中能解析到（教学说明若写示例名请放反引号内）；
-  3. 八个核心二级段必须按固定顺序排列：`Overview → Colors → Typography → Layout → Elevation & Depth → Shapes → Components → Do's and Don'ts`（`Motion` 等扩展段放最后），段名不可重复；
-  4. 生成时替换全部 `{{...}}` 占位槽！
-- `ui-slop-scan.mjs` 静态硬约束：主色禁落紫靛带（hue 235°–290°），禁奶油底配陶土橙套路，单文件品牌色 ≤5，字族 ≤2（等宽与系统回退除外），正文字号 ≥14px，正文行高 `1.4–1.6`，常规圆角 ≤8px（胶囊 `9999px` 除外）。
+文件名 DESIGN.md，放项目根。两层：前言是机器读的 token（`{path.to.token}` 引用），正文是人读的 prose——prose 才是主体，token 是它的上下文。八段可省略但顺序锁定；未知段（如 Motion、Iconography）允许追加在合适位置，消费方保留不报错。
+写法上的两条铁律：**一个具体参照胜过一堆形容词**（写「1970 年代老牌大学的研究生讲义」，不写「现代、干净、可信」）；**每个 token 说清为什么存在、用在哪、不用在哪**。Do's and Don'ts 收进参照带来的否定约束、反参考和 AI 通病。
+能跑就跑 `npx @google/design.md lint DESIGN.md`（校 token 引用与 WCAG 对比）；跑不了标「未经 lint」。
+
+---
 
 ```markdown
 ---
-version: "1.0"
-name: "{{产品名称}}"
-description: "{{一句话具体参照物定义}}"
+version: alpha
+name: {{产品名 / 系统名}}
+description: {{一句：这套视觉是什么，用一个具体参照物说}}
 colors:
-  primary: "{{#hex 唯一主强调色，禁紫靛默认色}}"
+  primary: "{{#hex，唯一强调色，只给最重要的动作}}"
   on-primary: "{{#hex}}"
-  secondary: "{{#hex 次级信息与辅助边线}}"
-  neutral: "{{#hex 页面底层背景}}"
-  surface: "{{#hex 面板与容器表面}}"
-  on-surface: "{{#hex 主正文色，与 surface 对比 ≥4.5:1}}"
-  on-surface-muted: "{{#hex 次要说明字色，对比 ≥4.5:1}}"
-  border: "{{#hex 分隔细线}}"
+  secondary: "{{#hex，边框 / 元信息 / 次级文字}}"
+  neutral: "{{#hex，底色}}"
+  surface: "{{#hex，卡片 / 面板}}"
+  on-surface: "{{#hex，正文}}"
+  on-surface-muted: "{{#hex，次级文字，对比 ≥4.5:1}}"
+  border: "{{#hex}}"
   success: "{{#hex}}"
   warning: "{{#hex}}"
-  error: "{{#hex 错误与破坏性动作专用}}"
+  error: "{{#hex，同时是破坏性动作的色}}"
+  agent: "{{#hex 或删掉；有 AI 才有，且只给 AI 的活动}}"
 typography:
   display:
-    fontFamily: "{{系统字体栈，零外部 Google Fonts CDN}}"
-    fontSize: "{{28px}}"
-    fontWeight: "600"
-    lineHeight: "1.25"
+    fontFamily: {{字族}}
+    fontSize: {{px/rem}}
+    fontWeight: {{数字}}
+    lineHeight: {{倍数}}
+    letterSpacing: {{em}}
   headline-md:
-    fontFamily: "{{系统字体栈}}"
-    fontSize: "{{20px}}"
-    fontWeight: "600"
-    lineHeight: "1.35"
+    fontFamily: {{字族}}
+    fontSize: {{…}}
+    fontWeight: {{…}}
+    lineHeight: {{…}}
   body-md:
-    fontFamily: "{{系统字体栈}}"
-    fontSize: "{{16px}}"
-    fontWeight: "400"
-    lineHeight: "1.5"
+    fontFamily: {{字族}}
+    fontSize: {{≥16px 移动端}}
+    fontWeight: 400
+    lineHeight: {{1.5-1.7}}
   label-sm:
-    fontFamily: "{{系统字体栈}}"
-    fontSize: "{{13px}}"
-    fontWeight: "500"
-    lineHeight: "1.4"
+    fontFamily: {{字族}}
+    fontSize: {{…}}
+    fontWeight: {{…}}
+    lineHeight: {{…}}
   mono:
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
-    fontSize: "{{13px}}"
-    fontWeight: "400"
-    lineHeight: "1.5"
+    fontFamily: {{等宽字族，代码 / ID / 时间码}}
+    fontSize: {{…}}
+    fontWeight: 400
+    lineHeight: 1.5
 rounded:
-  none: "0px"
-  sm: "4px"
-  md: "6px"
-  lg: "8px"
-  full: "9999px"
+  none: 0px
+  sm: {{px}}
+  md: {{px}}
+  lg: {{px}}
+  full: 9999px
 spacing:
-  xs: "4px"
-  sm: "8px"
-  md: "16px"
-  lg: "24px"
-  xl: "32px"
-  section: "48px"
+  xs: {{px}}
+  sm: {{px}}
+  md: {{px}}
+  lg: {{px}}
+  xl: {{px}}
+  gutter: {{px}}
+  section: {{px}}
 components:
   button-primary:
     backgroundColor: "{colors.primary}"
     textColor: "{colors.on-primary}"
+    typography: "{typography.label-sm}"
     rounded: "{rounded.md}"
-    height: "40px"
+    padding: {{px px}}
+    height: {{px}}
+  button-primary-hover:
+    backgroundColor: "{{#hex 或 token}}"
+  button-secondary:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.on-surface}"
+    rounded: "{rounded.md}"
+    padding: {{px px}}
   input:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.on-surface}"
     rounded: "{rounded.sm}"
-    height: "40px"
+    padding: {{px}}
+    height: {{≥44px 移动端}}
   card:
     backgroundColor: "{colors.surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "{spacing.md}"
 ---
 
 ## Overview
 
-{{用具体参照物描述整体视觉气质、受众阅读感受与信息密度，不堆砌空泛形容词。}}
+{{一段具体参照：这套视觉像什么——一件器物、一种印刷品、一个场所——受众是谁、该有什么情绪反应、密度是密是疏。写画面，不写形容词清单。}}
 
 ## Colors
 
-- **Primary ({colors.primary})**：{{唯一主动作强调色，每屏仅用于首要 CTA；不用于大面积背景}}
-- **Secondary ({colors.secondary})**：{{次级标签与辅助边线}}
-- **Neutral ({colors.neutral}) & Surface ({colors.surface})**：{{靠明度阶梯建立层次，正文用 {colors.on-surface}，弱化信息用 {colors.on-surface-muted}}}
-- **Semantic ({colors.success} / {colors.warning} / {colors.error})**：{{状态提示必配文字或图标形状，不只靠颜色}}
+{{一句系统：单强调还是双色、暖冷、深浅。然后每个颜色一条：}}
+- **Primary ({colors.primary})**：{{只用于最重要的一个动作与…；不用于…}}
+- **Secondary ({colors.secondary})**：{{边框、说明、元信息；不用于…}}
+- **Neutral ({colors.neutral}) / Surface ({colors.surface})**：{{底与面的层级靠明度差不靠阴影}}
+- **Error ({colors.error})**：{{错误与破坏性动作专用，不做强调色}}
+- **Agent ({colors.agent})**：{{只出现在 AI 的产出、进度、可撤销范围；人类操作不许用；人接手即退成普通}}
+{{深色模式：另一组 token 或另一份 DESIGN.md；不是浅色反转，对比单独测。}}
 
 ## Typography
 
-- **Body ({typography.body-md})**：{{正文 ≥14px（移动端 ≥16px），行高 1.5，行宽控制在 65ch 内}}
-- **Headline ({typography.headline-md}) & Display ({typography.display})**：{{层级清晰，不靠负字距挤压小字}}
-- **Mono ({typography.mono})**：{{仅用于单号、代码、时间戳与对齐数字 `tabular-nums`，使用本地系统字体栈零外部 CDN}}
+{{一到两个字族及其角色；两个的话要明显不同。行长上限、字号差距是大是小、标题是醒目还是克制。}}
+- **Display（typography.display）**：{{用在哪、不用在哪}}
+- **Body（typography.body-md）**：{{正文，行长 <80 字符}}
+- **Label（typography.label-sm）**：{{按钮、表格头；不全大写除非有理由}}
+- **Mono（typography.mono）**：{{代码、ID、时间码；不用于小数据标签装饰}}
 
 ## Layout
 
-{{说明网格/流式最大宽度、不可压缩的主任务区，以及组内间距（{spacing.sm}）小于组间间距（{spacing.lg} / {spacing.section}）的呼吸节奏。}}
+{{网格模型：流式 / 固定最大宽；间距刻度（{spacing.xs} 到 {spacing.xl}）与节奏；段落间距 {spacing.section}；工作台型写清不可压缩的主任务区。}}
 
 ## Elevation & Depth
 
-{{说明层次手段：优先通过 {colors.neutral}、{colors.surface} 与 1px {colors.border} 区分面板，仅浮层模态框使用克制阴影。}}
+{{层级靠什么：明度阶梯 / 发丝线 / 阴影。用阴影的写清阴影语言（环境 + 直射）；扁平的写替代手段。}}
 
 ## Shapes
 
-{{控件使用 {rounded.sm}，容器使用 {rounded.md}，弹层使用 {rounded.lg}（均 ≤8px），胶囊状态点用 {rounded.full}；严禁卡套卡。}}
+{{圆角语言与它的逻辑：{rounded.sm} 控件、{rounded.md} 卡片、{rounded.lg} 弹层；嵌套圆角子 ≤ 父；不在同一屏混用锐角与圆角。}}
 
 ## Components
 
-- **Button**：{{主次分明，悬停改变明度不产生位移，聚焦显示清晰焦点环}}
-- **Input & Form**：{{显式 label、就地错误提示、移动端命中高度 ≥44px}}
-- **Table / List**：{{数字列启用 `tabular-nums` 右对齐，长文本安全截断或折行不撑破横向视口}}
+{{每个核心组件一段：解剖、色用法、尺寸、状态外观（默认 / 悬停 / 聚焦 / 禁用 / 加载 / 错误）；悬停不位移；焦点环可见。}}
+- **Button**：{{…}}
+- **Input**：{{…}}
+- **Card / Table row**：{{…}}
+- **Status dot / badge**：{{语义靠形状不只靠颜色}}
 
 ## Do's and Don'ts
 
-- **Do**：只将 `{colors.primary}` 用在当前屏幕最核心的一个动作上。
-- **Do**：保持正文对比度 ≥4.5:1，支持全键盘导航与 `prefers-reduced-motion`。
-- **Don't**：严禁引入外部字体 CDN（如 Google Fonts），一律使用本地系统字体栈回退。
-- **Don't**：严禁紫靛默认主色、奶油底配陶土橙、ALL-CAPS 眉标、`A · B · C` 中点串、按钮尾缀 `→`、满屏大圆角灰影卡片阵列。
+- Do：{{参照带来的做法}}
+- Do：{{只把 primary 用在每屏唯一的主动作上}}
+- Do：{{对比 ≥4.5:1；reduced-motion 时动效退化}}
+- Don't：{{参照带来的否定：不做渐变 / 发光 / 拟物 / 一律圆角…}}
+- Don't：{{反参考}}
+- Don't：{{AI 通病：ALL-CAPS 眉标、中点串元信息、「WORD — 片段」标签、按钮尾巴 →、每段淡入、一律灰影卡片、纯黑冒充}}
 
 ## Motion
 
-- 交互反馈 120ms，面板展开 180ms，仅动 `transform` 与 `opacity`（严禁 `transition: all`）；开启 `prefers-reduced-motion` 时全部归零。
+```yaml
+motion:
+  feedback: {{ms}}
+  content: {{ms}}
+  easing: "{{cubic-bezier}}"
 ```
+{{动效只为说明因果：交互反馈 {{ms}}，内容过渡 {{ms}}，曲线只有一条；只留一处编排好的时刻；超过 {{ms}} 的砍掉；reduced-motion 全部归零。}}
+
+## 硬约束
+
+| 项 | 约束 |
+|---|---|
+| 主色 | 不用紫 / 靛作主色；不用「奶油底 + 衬线大标题 + 陶土橙」整套 |
+| 色彩数量 | 总色 ≤ 5，渐变色标 ≤ 3，不单一色相统治全屏 |
+| 字体 | 字族 ≤ 2；正文 ≥ 14px；letter-spacing 不为负；字号不随视口缩放 |
+| 行长与行高 | 正文 `max-width: 65ch`；`line-height` 1.4–1.6 |
+| 圆角 | ≤ 8px；不全场统一一个圆角；禁卡中卡、禁区块做浮卡 |
+
+这张表既约束生成，也是 `ui-slop-scan` 的判据来源（`node .cac/scripts/ui-slop-scan.mjs`）；病因不是「用了紫色」而是「没做选择」，所以扫描只兜底、不当审美裁判，有意违反的在代码里写 `unslop-ignore: <理由>`，扫描跳过并计入已豁免。
+表里机器能判的（主色色相、正文字号、字距、行高、圆角、总色数、字族数、渐变色标、奶油底与陶土橙同现）扫描已实现；「不单一色相统治全屏」「不全场统一一个圆角」「禁卡中卡」「`max-width: 65ch`」「字号不随视口缩放」静态判不准，留给人眼与 design-maker 的两遍法。
+```
+
+---
+
+## 写作要点
+1. 前言至少 `name` 与 `colors.primary`；token 名按意图命名（`primary`、`on-surface`），不按值命名（`blue-500`）。
+2. 八段顺序锁定（Overview / Colors / Typography / Layout / Elevation & Depth / Shapes / Components / Do's and Don'ts）；Motion 等自定义段放最后。
+3. prose 里引用 token 用 `{colors.primary}` 形式，让引用可被 lint 校验。
+4. 有 UI 系统（shadcn / MUI / 原生）时只写差量，token 引用系统默认值的写「继承 xxx」。
+5. Do's and Don'ts 是给生成器的护栏：参照的否定约束 + 反参考 + AI 通病三合一。
+6. 深色两套一起设计；纯黑（#000）与冒充黑（#0B0B0B）都要有理由。

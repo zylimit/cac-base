@@ -1,74 +1,108 @@
 ---
 name: dev-plan-template
-description: DEV-PLAN.md 标准输出模板（锚点与格式严格对齐 node .cac/scripts/plan-lint.mjs 与 plan-archive.mjs）。
+description: DEV-PLAN.md 输出模板。分析 Product Spec 后按此结构填充内容，输出为 DEV-PLAN.md，供 dev-builder 按 Phase 逐步开发。
 ---
 
 # DEV-PLAN 输出模板
 
-文件名：`DEV-PLAN.md`（放项目根目录）。
-- **`plan-lint.mjs` 强制核查锚点（字面不可更改）**：
-  1. 至少 1 个顶层阶段标题 `## Phase N: 阶段名称`（`N` 为正整数）；
-  2. 每个 Phase 内必齐五个加粗字段：`**交付内容**`、`**验证的假设**`、`**关键文件**`、`**Task 清单**`、`**验收标准**`；
-  3. 每个 Phase 内至少 1 条任务行 `- **Task N.M：任务标题**`；
-  4. 严禁未完成占位词（`TBD` / `TODO` / `待补充` / `待确定` / `类似 Task` / `类似 Phase` / `按需调整` / `做相应修改` / `implement later`）；
-  5. 若 `Product-Spec.md` 含 `[REQ-...]` 声明，每条 REQ 要么出现在某条 `- **Task N.M：...**` 行（或 `## 已归档 Phase` 指针行的 `（REQ：…）` 后缀），要么在 `## 范围外（本次不计划）` 下带明确原因声明。
+文件命名：DEV-PLAN.md，放项目根目录。段名（**交付内容** / **验证的假设** / **关键文件** / **Task 清单** / **验收标准**）与 `- **Task N.M：**` 条目格式，以及 `## 范围外（本次不计划）` 小节标题，是 `plan-lint.mjs` 检查的锚点，写法不能改；Task 条目下的 Business Context / 依赖类型 / 证据产生者 三个子字段不受 `plan-lint.mjs` 检查，但要写全——它们直接对应 implementer 派单的七字段包（Business Context / Verification 等，见 .cac/rules/subagent-dispatch.md [派单包七字段]），写全了派单时不用主 Agent 现补。
+一个完整结果一个 Task 就能交付时，仍用一个 Phase 装下这一个 Task（`plan-lint.mjs` 要求至少一个 `## Phase` 小节），不为只有一个 Task 硬拆成多个 Phase；出现多个可独立验收的交付组才真正拆成多个 Phase。
 
 ```markdown
 # Development Plan — [项目名称]
 
-> 记录项目分阶段开发计划、当前推进状态与验收结论。
+> 记录项目的开发阶段划分、当前进度和剩余工作。新 session 启动先读本文件。
 
 ## 开工前置
 
-- [列出押后待定项当前采用的默认做法、待实证的核心推断；若无前置待定项可整节省略]
+- 待定 Q-N：押后到 Phase X 开工前，押后期间按 [默认怎么做]
+- [推断] / [默认] 条目：[一行一条，演示时让用户挑错]
+- Spec 缺口 / 矛盾：[条目] → 已报需求存疑，本计划按 [最简默认] 先做，待回签
 
 ---
 
-## Phase 1: [核心价值流程名称]
+## Phase 1: [功能名称]
 
 **交付内容**：
-- [动词开头，描述用户或调用方能完成的可观察业务结果]
+- [动词开头，一条一个可感知交付物：用户能做什么 / 系统做什么]
 
 **验证的假设**：
-- [无；或写明 Spec 中哪条 `[推断]`/`[默认]` 或哪项技术未知 → 本 Phase 用什么客观现象证明成立]
+- [无；或一条假设一 bullet：来源（Spec 哪条 [推断] / [待定] / [默认]、哪项技术未知）→ 本 Phase 用什么证明它成立]
 
 **关键文件**：
-- `src/path/to/module.ts` — [职责说明；若多 Task 触及同一文件须标明唯一写入 owner Task]
+- `src/path/to/file.tsx` — [用途说明]
 
 **Task 清单**：
-- **Task 1.1：[明确改动标题（关联 REQ-CORE-001）]** — 修改/创建 `src/path/to/module.ts`（具体函数/数据结构）+ 验证命令 `npm test -- tests/module.test.ts`
-  - Business Context：[为谁解决什么问题；Spec 规则与例外摘要；1 组区分对错的输入→期望输出样例——供主 Agent 直接抄入七字段派单]
-  - 依赖类型：[功能前置：Task X.Y / 无；验证前置：隔离测试库等 / 无]
-  - 证据产生者：[LOW 档：`implementer` 自检；MEDIUM 档：`implementer` + `code-reviewer` Stage 0+1；HIGH 档：`implementer` + `code-reviewer` 全三 Stage + 独立 `tester`]
+- **Task 1.1：[具体改动]** — 文件路径 + 改哪个函数 / 加哪个字段 + 验证命令
+  - Business Context：[为谁解决什么问题；关键规则来源（Spec 第几条 / `[REQ-模块-编号]`）；一个能区分对错的输入输出例子——直接抄进 implementer 派单的 Business Context 字段，不让 fresh 实例猜]
+  - 依赖类型：[功能前置：必须先完成才能开工的 Task / 已具备能力；验证前置：验收要用到的外部条件（真实接口、隔离数据、可达初态）；都没有写"无"；共享写入的文件标唯一 owner Task]
+  - 证据产生者：[这条验证命令归谁跑——LOW 档 implementer 自检；MEDIUM 起 code-reviewer 复核；HIGH 档另派 tester 独立验证，对应 dev-workflow-details.md [项目开发阶段] 判档]
+  - 迁移与可运行基线：[仅多消费者兼容迁移时填写：旧/新行为等价依据、消费者及生成入口清单、兼容期起止条件、本批可运行基线与实际检查、失败时保留的已验证版本、最终集成 owner 和旧形式退出检查；单处修订删去这一行]
 
 **验收标准**：
-- [编译/语法检查 0 错误 + 测试运行器全绿 + 核心流程冒烟可观察结果]
+- [能编译、能启动、能看到 XX 效果；假设成立的证据是什么]
+
+---
+
+<按实际功能数量增减 Phase，结构相同>
 
 ---
 
 ## 范围外（本次不计划）
 
-<!-- 仅当 Spec 有 REQ 编号未纳入本期 Task 时保留本节，每条必须写明原因与回归条件；无则整节删除 -->
-- REQ-AUX-002：已押后——二期报表能力，待一期核心单据流转稳定后排入下一版计划
+<本次计划没有安排 Task、但 Spec 里出现过的 REQ 编号；每条要给原因和回来的条件，不是漏做的借口；没有就写"无">
+
+- REQ-XXX-01：待确认——[等什么信息确认后才能排，找谁确认]
+- REQ-XXX-02：已押后——[押后到哪个后续计划 / Phase，为什么现在不做]
+- REQ-XXX-03：归别的计划——[实际由哪份计划 / 哪个项目负责，不是本次遗漏]
 
 ---
 
 ## 技术栈
 
-| 层级 | 技术选型 | 版本 | 用途说明 |
-|------|----------|------|----------|
-| 运行时/框架 | [名称] | [版本] | [用途] |
+| 层级 | 技术 | 版本 | 说明 |
+|------|------|------|------|
+| [层级名] | [技术名] | [版本号] | [选择理由或用途] |
 
-## 数据库表（如有，无则删除）
+## 数据库表（如有）
 
-| 表名 | 首次创建 Phase | 用途与单一写入模块 |
-|------|----------------|--------------------|
-| `orders` | Phase 1 | [用途说明] |
+| 表名 | 所属 Phase | 用途 |
+|------|-----------|------|
+| `table_name` | Phase N | [用途说明] |
 
 ## 开发规则
 
-- 按 Task 定档（LOW / MEDIUM / HIGH）执行编码、独立审查与独立测试闭环
-- 每个 Phase 收尾必过四步走：全 Phase Code Review → 独立测试完整性（含 `design-trace.mjs`）→ 全量编译静态检查 → 功能冒烟，结论以 `PASS / CONCERNS / FAIL / WAIVED` 写回 Phase 标题
-- 若启用人读文档（存在 `docs/readable-src/config.json`），触及表/模块边界的 Task 随单运行 `node .cac/scripts/readable-docs.mjs build` 并确保 `check` 报「不一致 0 条」
-- Commit 格式：`phase-N: 简要描述`
+- 每完成一个 Phase 走四步走：Code Review → 测试完整性 → 编译验证 → 功能测试
+- 四步走全部通过才算 Phase 完成
+- 人读文档跟着 Task 走：碰了表结构、读写表的代码或模块的文件与接口的 Task，交付时带着说明，`readable-docs.mjs check` 报「不一致 0 条」（项目不出人读文档的删掉这一行）
+- Commit message 格式：`phase-N: 简要描述`
+- 包管理器：[pnpm/npm/yarn]
 ```
+
+## 片段示例（Forge 的 Phase 2 节选）
+
+- **交付内容**：会话 CRUD 与聊天流式接口；前端消息列表 + 流式渲染 + 会话切换
+- **验证的假设**：Claude API 的 SSE 在 Electron 渲染进程能逐块到达（技术未知）——页面上看到逐字输出即成立
+- **关键文件**：`src/lib/db.ts` — 建表与 db 单例；`src/app/api/chat/route.ts` — 聊天 API
+- **Task 清单**：Task 2.1 新建 `src/lib/db.ts`，建 sessions / messages 表，验证 `pnpm tsc --noEmit`；Task 2.2 新建 `src/app/api/chat/route.ts` 返回 SSE，验证 `curl -N localhost:3000/api/chat`
+  - Task 2.2 的 Business Context：已登录用户发消息要逐字看到回复，不是等全部生成完再一次性显示——区分例子：发送"你好"应逐块收到"你" "好"，不是等 2 秒后整句弹出；依赖类型：功能前置＝Task 2.1 先建好 messages 表（要写入这张表）；证据产生者：implementer 自检（本 Task 判 LOW 档，不追加 reviewer）
+- **验收标准**：能建会话、发消息、收到流式回复；刷新后会话和消息不丢
+
+## 写作要点
+
+1. Phase 用功能名命名，不用编号序列——"聊天核心 + SQLite 持久化"比"Phase 2"好认；标题四十字以内，修订经过、版本号、档位、提交号写进正文不进标题，做完由 dev-builder 在标题后标 `✅（日期，四态结论）`；编号用整数（`## Phase 12:`），写成 `5.x`、`A` 的标题 plan-lint 与归档脚本都认不出
+2. 交付内容动词开头，一条一个可感知交付物；基础设施 Phase 写"XX 表 + CRUD API"，业务 Phase 写用户能做什么
+3. 验证的假设每 Phase 必填、可为「无」；一条假设一 bullet，写清来源（Spec 的 [推断] / [待定] / [默认] 或技术未知）和成立的证据
+4. 关键文件用项目内相对路径 + 用途说明，不列测试和配置文件（除非它是本 Phase 的核心交付物）；被多个 Task 共写的文件额外标唯一 owner Task，避免几个 Task 都以为自己负责收口
+5. Task 清单每条给齐三样：文件路径 + 具体改动 + 验证命令；不写"类似 Task N"、"按需调整"；再加 Business Context / 依赖类型 / 证据产生者三个子字段，让 Task 能直接抄进 implementer 派单
+6. 验收标准最低"能编译 + 能启动 + 新功能可用"，推荐加"现有功能未破坏"
+7. 技术栈表标经 WebSearch 验证的版本号；数据库表标在哪个 Phase 建，后续 migration 写进那个 Phase 的交付内容
+8. 开工前置段没有待定 / 推断 / 缺口时整段删掉，不留空壳
+9. Phase 顺序：核心价值流程（含它依赖的最小骨架）→ 验证核心假设 → 重要功能 → 辅助功能 → 收尾（i18n / 打包 / 部署）；依赖只做校正，不做主轴
+10. Spec 条目带 `[REQ-模块-编号]` 时，Task 描述里写上对应编号——plan-lint 双向查：需求没被任何 Task 引用、引用了 Spec 里没有的编号，都报错
+11. Business Context 只写一两句能直接塞进派单的内容（为谁、什么规则、一个区分对错的例子），不复制整段 Spec 正文；REQ 编号已覆盖的规则不重复抄
+12. 依赖类型区分功能前置与验证前置：功能前置进拓扑序、决定开工先后，验证前置只影响验收能不能收口、不卡开工；共享写入的文件明确唯一 owner Task，其余 Task 只读不改
+13. 证据产生者对应本仓 LOW / MEDIUM / HIGH 判档（见 .cac/rules/dev-workflow-details.md [项目开发阶段]）：写清这条验证归谁跑，不是主 Agent 自己跑，也不是"跑完就算"
+14. 一个完整结果只用一个 Task 时，仍装进一个 Phase（`plan-lint.mjs` 要求至少一个 `## Phase` 小节）；出现多个可独立验收的交付组才真正拆成多个 Phase，Phase 数量不是预设的固定门槛
+15. 「## 范围外（本次不计划）」声明不是豁免：每条 REQ 要写原因（待确认 / 已押后 / 归别的计划）和回来的条件（等什么发生、回到哪份计划），不能只写编号不写理由；`plan-lint.mjs` 对已声明原因的 REQ 报「范围外（已声明）」不算失败，但既没安排 Task 又没声明的 REQ 仍然 FAIL，没有待声明的条目就整节删掉，不留空壳
+16. 「迁移与可运行基线」子字段只给多消费者兼容迁移的 Task 填：逐批核对消费者 / 生成入口清单与可运行基线；批次无法独立通过集成检查时，只报实际跑过的局部结果，把最终重生成及完整检查交给明确的 owner Task；普通 Task 删去这一行，不留空壳

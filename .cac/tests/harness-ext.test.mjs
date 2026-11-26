@@ -363,3 +363,74 @@ test('[Regression] downstream target installed via setup.sh --with-harness / cac
     }
   }
 });
+
+test('[Regression MEDIUM-1] diff-hash in freshly git-init repo without HEAD sees staged git-add files instead of hiding them', () => {
+  const dir = mkTmpDir('cac-unborn-head-');
+  try {
+    const cacCli = path.join(REPO_ROOT, 'scripts', 'cac-base.mjs');
+    const inst = runNode(cacCli, ['install', '--target', dir]);
+    assert.equal(inst.status, 0, `cac-base install failed: ${inst.stderr}`);
+
+    // Initialize Git WITHOUT running `git commit` -> unborn HEAD (no HEAD commit)
+    const initRes = gitIn(dir, ['init']);
+    assert.equal(initRes.status, 0, `git init failed: ${initRes.stderr}`);
+    const headCheck = gitIn(dir, ['rev-parse', '--verify', 'HEAD']);
+    assert.notEqual(headCheck.status, 0, 'Precondition: freshly initialized repo must have no HEAD commit');
+
+    const localHarness = path.join(dir, '.cac', 'harness', 'harness.mjs');
+
+    // 1. Baseline diff-hash before creating/staging a.mjs
+    const dhBaseline = runNode(localHarness, ['diff-hash'], { cwd: dir });
+    assert.equal(dhBaseline.status, 0, `baseline diff-hash failed: ${dhBaseline.stderr}`);
+    assert.equal(dhBaseline.json?.nonGit, false);
+    assert.equal(dhBaseline.json?.baseCommit, null);
+    assert.match(dhBaseline.json?.diffHash || '', /^[0-9a-f]{64}$/);
+
+    // 2. Write a.mjs and `git add a.mjs` (still no HEAD commit)
+    writeFiles(dir, { 'a.mjs': 'export const stagedWithoutHead = 1;\n' });
+    const addRes = gitIn(dir, ['add', 'a.mjs']);
+    assert.equal(addRes.status, 0, `git add a.mjs failed: ${addRes.stderr}`);
+
+    const dhStaged = runNode(localHarness, ['diff-hash'], { cwd: dir });
+    assert.equal(dhStaged.status, 0, `staged diff-hash failed: ${dhStaged.stderr}`);
+    assert.equal(dhStaged.json?.nonGit, false, 'unborn-HEAD git repo must report nonGit === false');
+    assert.equal(dhStaged.json?.baseCommit, null, 'unborn-HEAD git repo must report baseCommit === null');
+    assert.match(dhStaged.json?.diffHash || '', /^[0-9a-f]{64}$/);
+    assert.notEqual(
+      dhStaged.json?.diffHash,
+      dhBaseline.json?.diffHash,
+      'Staged a.mjs in unborn-HEAD repo must NOT vanish into baseline diffHash',
+    );
+
+    // 3. Clear index via `git rm --cached a.mjs` -> diffHash differs before/after clearing index
+    const rmCached = gitIn(dir, ['rm', '--cached', 'a.mjs']);
+    assert.equal(rmCached.status, 0, `git rm --cached a.mjs failed: ${rmCached.stderr}`);
+    const dhUnstaged = runNode(localHarness, ['diff-hash'], { cwd: dir });
+    assert.equal(dhUnstaged.status, 0);
+    assert.equal(dhUnstaged.json?.nonGit, false);
+    assert.notEqual(
+      dhStaged.json?.diffHash,
+      dhUnstaged.json?.diffHash,
+      'diffHash before and after clearing index (git rm --cached) must differ',
+    );
+
+    // 4. Re-stage a.mjs, then clear index + file (`git rm -f a.mjs`) -> differs from staged and matches baseline
+    assert.equal(gitIn(dir, ['add', 'a.mjs']).status, 0);
+    const dhRestaged = runNode(localHarness, ['diff-hash'], { cwd: dir });
+    assert.equal(dhRestaged.json?.diffHash, dhStaged.json?.diffHash);
+
+    const rmForce = gitIn(dir, ['rm', '-f', 'a.mjs']);
+    assert.equal(rmForce.status, 0, `git rm -f a.mjs failed: ${rmForce.stderr}`);
+    const dhCleared = runNode(localHarness, ['diff-hash'], { cwd: dir });
+    assert.equal(dhCleared.status, 0);
+    assert.equal(dhCleared.json?.nonGit, false);
+    assert.notEqual(
+      dhStaged.json?.diffHash,
+      dhCleared.json?.diffHash,
+      'diffHash before and after clearing staged index (git rm -f) must differ (staged file was not hidden)',
+    );
+    assert.equal(dhCleared.json?.diffHash, dhBaseline.json?.diffHash);
+  } finally {
+    cleanupTmp(dir);
+  }
+});

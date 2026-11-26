@@ -323,4 +323,83 @@ describe('doctor.mjs integrity & health check contract', () => {
     const rCleanHr = runNode(targetDoctor, [target, '--json']);
     assert.equal(rCleanHr.status, 0, `expected exit 0 for headerless AGENTS.md with body thematic break: ${rCleanHr.stdout}`);
   });
+
+  test('[Regression v1.2.0] doctor.mjs enforces all 7 core rules including workflow-orchestration.md (fails non-zero on delete or 0-byte empty even when FRAMEWORK-MANIFEST.json is synced)', () => {
+    const target = installTarget('seventh-core-rule-guard');
+    const targetDoctor = path.join(target, '.cac', 'scripts', 'doctor.mjs');
+    const manifestPath = path.join(target, '.cac', 'FRAMEWORK-MANIFEST.json');
+    const ruleRel = '.cac/rules/workflow-orchestration.md';
+    const ruleFull = path.join(target, '.cac', 'rules', 'workflow-orchestration.md');
+
+    const origRuleText = fs.readFileSync(ruleFull, 'utf8');
+    const origManifestText = fs.readFileSync(manifestPath, 'utf8');
+
+    // Baseline: all 7 core rules and 194 manifest entries pass in human & JSON mode
+    const rBaseHuman = runNode(targetDoctor, [target]);
+    assert.equal(rBaseHuman.status, 0, `baseline doctor failed: ${rBaseHuman.stderr}`);
+    for (const ruleName of [
+      'dev-workflow-details.md',
+      'subagent-dispatch.md',
+      'workflow-orchestration.md',
+      'file-structure.md',
+      'memory-systems.md',
+      'design-detail.md',
+      'domain-rulings.md',
+    ]) {
+      assert.match(rBaseHuman.stdout, new RegExp(`✓ rule ${ruleName.replace('.', '\\.')}`));
+    }
+    assert.match(rBaseHuman.stdout, /FRAMEWORK-MANIFEST\.json 全量比对 194 条 LF-SHA256 一致/);
+
+    // Case 1: delete .cac/rules/workflow-orchestration.md AND filter it out of FRAMEWORK-MANIFEST.json
+    // so manifest missing-file check cannot mask a missing CORE_RULES entry
+    fs.rmSync(ruleFull, { force: true });
+    const manifestWithoutRule = JSON.parse(origManifestText);
+    manifestWithoutRule.files = manifestWithoutRule.files.filter((f) => f.path !== ruleRel);
+    fs.writeFileSync(manifestPath, JSON.stringify(manifestWithoutRule, null, 2) + '\n', 'utf8');
+
+    const rDeletedHuman = runNode(targetDoctor, [target]);
+    assert.notEqual(rDeletedHuman.status, 0, 'deleting workflow-orchestration.md must cause doctor.mjs to exit non-zero');
+    assert.match(rDeletedHuman.stderr, /workflow-orchestration\.md/);
+
+    const rDeletedJson = runNode(targetDoctor, [target, '--json']);
+    assert.notEqual(rDeletedJson.status, 0, 'doctor.mjs --json must exit non-zero when workflow-orchestration.md is deleted');
+    const deletedParsed = JSON.parse(rDeletedJson.stdout.trim());
+    assert.equal(deletedParsed.ok, false);
+    assert.equal(
+      deletedParsed.detail.errors.some((e) => e.includes('FRAMEWORK-MANIFEST.json')),
+      false,
+      `manifest was synced to isolate CORE_RULES check, got unexpected manifest error: ${JSON.stringify(deletedParsed.detail.errors)}`,
+    );
+    assert.equal(
+      deletedParsed.detail.errors.some((e) => e.includes('workflow-orchestration.md') && (e.includes('缺失') || e.includes('空'))),
+      true,
+      `expected CORE_RULES error naming workflow-orchestration.md, got: ${JSON.stringify(deletedParsed.detail.errors)}`,
+    );
+
+    // Case 2: 0-byte empty .cac/rules/workflow-orchestration.md with synced manifest SHA256 -> still fails non-zero
+    fs.writeFileSync(ruleFull, '', 'utf8');
+    const emptySha = createHash('sha256').update(Buffer.alloc(0)).digest('hex');
+    const manifestEmptyRule = JSON.parse(origManifestText);
+    const entry = manifestEmptyRule.files.find((f) => f.path === ruleRel);
+    assert.ok(entry, 'expected .cac/rules/workflow-orchestration.md in FRAMEWORK-MANIFEST.json');
+    entry.sha256 = emptySha;
+    entry.bytes = 0;
+    fs.writeFileSync(manifestPath, JSON.stringify(manifestEmptyRule, null, 2) + '\n', 'utf8');
+
+    const rEmptyJson = runNode(targetDoctor, [target, '--json']);
+    assert.notEqual(rEmptyJson.status, 0, '0-byte workflow-orchestration.md must fail doctor.mjs');
+    const emptyParsed = JSON.parse(rEmptyJson.stdout.trim());
+    assert.equal(emptyParsed.ok, false);
+    assert.equal(emptyParsed.detail.errors.some((e) => e.includes('LF-SHA256')), false);
+    assert.equal(
+      emptyParsed.detail.errors.some((e) => e.includes('workflow-orchestration.md') && (e.includes('缺失') || e.includes('空'))),
+      true,
+    );
+
+    // Case 3: restoring file + manifest returns doctor.mjs to exit 0
+    fs.writeFileSync(ruleFull, origRuleText, 'utf8');
+    fs.writeFileSync(manifestPath, origManifestText, 'utf8');
+    const rRestored = runNode(targetDoctor, [target, '--json']);
+    assert.equal(rRestored.status, 0, `expected exit 0 after restoring workflow-orchestration.md: ${rRestored.stdout}`);
+  });
 });

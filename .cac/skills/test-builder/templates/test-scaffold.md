@@ -1,51 +1,51 @@
 ---
 name: test-scaffold
-description: 最小可用测试基建参考（Node 原生 node:test / Vitest / Python pytest），先跑通 1 条冒烟再补高价值契约测试。
+description: test-builder 搭建测试基建时的最小 scaffold 参考。按技术栈选用，目标是「能跑通一个样例」即可，不过度配置。
 ---
 
-# 测试基建最小 Scaffold 参考
+# 测试基建最小 scaffold 参考
 
-> 原则：最小可用、零多余插件。零依赖 Node 项目优先使用内置 `node:test` + `node:assert/strict`（无需装任何 npm 包，Windows PowerShell 与 Linux 直接 `node --test` 运行）。
+> 原则：最小可用。先让空套件 + 一个样例用例跑通，再写真测试。不引入覆盖率门禁、不接 CI（除非用户要求）。
 
-## 1. 纯 Node 内置测试运行器（Node >= 20 零依赖首选）
+## 后端 · pytest（Python / FastAPI）
 
-- **目录约定**：`tests/*.test.mjs`（文件头标 `// risk: high|medium|low`）
-- **最小样例**：
-```js
-// risk: low
-import test from 'node:test';
-import assert from 'node:assert/strict';
-
-test('scaffold alive', () => {
-  assert.equal(1 + 1, 2);
-});
-```
-- **运行命令**：`node --test tests/*.test.mjs`
-
-## 2. 前端 / TypeScript（Vitest）
-
-- **依赖**：`vitest`（组件 DOM 测试再按需加 `jsdom` + `@testing-library/react`）
-- **配置（`vitest.config.ts`）**：
-```ts
-import { defineConfig } from 'vitest/config';
-export default defineConfig({
-  test: { environment: 'node' },
-});
-```
-- **运行命令**：`npx vitest run`
-
-## 3. Python 后端（pytest）
-
-- **依赖**：`pytest`（异步接口按需加 `pytest-asyncio`）
-- **目录与配置（`pytest.ini`）**：
+**依赖**（进 `api/requirements.txt` 或 dev 依赖）：`pytest`；要测 async 函数 / 路由再加 `pytest-asyncio`。
+**目录约定**：`api/tests/`，文件名 `test_*.py`，文件头标 `# risk: high|medium|low`。
+**最小配置**（`api/pytest.ini` 或 pyproject 段，用了 pytest-asyncio 才加第三行）：
 ```ini
 [pytest]
 testpaths = tests
+asyncio_mode = auto
 ```
-- **最小样例（`tests/test_smoke.py`）**：
+**样例用例**（`api/tests/test_smoke.py`，验证基建可跑）：
 ```python
-# risk: low
 def test_scaffold_alive():
     assert 1 + 1 == 2
 ```
-- **运行命令**：`python -m pytest -q`
+**跑**：`cd api && python -m pytest -q`
+
+## 前端 · vitest（TypeScript / React + Vite）
+
+**依赖**（`web` devDependencies）：`vitest`；测组件渲染再加 `@testing-library/react` 与 `jsdom`。
+**目录约定**：就近 `*.test.ts` 或 `web/src/__tests__/`；scripts 加 `"test": "vitest run"`。
+**最小配置**（`web/vitest.config.ts`，纯函数测试可省 environment）：
+```ts
+import { defineConfig } from "vitest/config";
+export default defineConfig({
+  test: { environment: "node" },   // 测组件改 "jsdom"
+});
+```
+**样例用例**（`web/src/utils.test.ts`，优先测无副作用纯函数）：
+```ts
+import { describe, it, expect } from "vitest";
+describe("utils 纯函数", () => {
+  it("scaffold alive", () => expect(1 + 1).toBe(2));
+});
+```
+**跑**：`cd web && npm run test`
+
+## 取舍提醒
+
+- 先测纯逻辑 / 契约 / 解析：构造数据喂纯函数即可，跑得快、稳；需要真库时用最小 fixture + 测试库，绝不碰生产或基线数据。
+- 组件渲染、E2E（Playwright）成本高，按预算和价值排后。
+- scaffold 阶段只求样例能跑通，高价值用例按 test-builder [测试维度清单] 补。

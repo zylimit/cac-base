@@ -707,4 +707,114 @@ describe('installer & setup CLI contract', () => {
     const rRestored = runNode(CAC_CLI, ['manifest', '--check', '--target', target]);
     assert.equal(rRestored.status, 0, `restored manifest --check failed: ${rRestored.stdout}`);
   });
+
+  test('[Regression v1.2.0] fresh install ships all 194 managed assets, 7 core rules, headerless SiteMaster AGENTS.md, adapters.json, and representative cc-base 1:1 fused examples/references', () => {
+    const target = nextDir('v120-full-194-assets');
+    const rInst = runNode(CAC_CLI, ['install', '--target', target, '--json']);
+    assert.equal(rInst.status, 0, `install failed: ${rInst.stderr}`);
+    const report = JSON.parse(rInst.stdout.trim());
+    assert.equal(report.status, 'ok');
+
+    // 1. FRAMEWORK-MANIFEST.json tracks all 194 managed files (0 seeded), all present and non-empty on disk
+    const manifestObj = JSON.parse(fs.readFileSync(path.join(target, '.cac', 'FRAMEWORK-MANIFEST.json'), 'utf8'));
+    assert.equal(manifestObj.version, 1);
+    assert.equal(manifestObj.engine, 'cac-base');
+    assert.deepEqual(manifestObj.seeded, []);
+    assert.equal(manifestObj.files.length, 194, `expected 194 managed files in FRAMEWORK-MANIFEST.json, got ${manifestObj.files.length}`);
+    for (const item of manifestObj.files) {
+      const full = path.join(target, ...item.path.split('/'));
+      assert.equal(fs.existsSync(full), true, `managed asset missing after install: ${item.path}`);
+      assert.ok(fs.statSync(full).size > 0, `managed asset must be non-empty: ${item.path}`);
+    }
+
+    // 2. Headerless .cac/rules/AGENTS.md carries SiteMaster constitution + pointer to workflow-orchestration.md + startup boundary
+    const agentsText = fs.readFileSync(path.join(target, '.cac', 'rules', 'AGENTS.md'), 'utf8');
+    assert.equal(/^---(?:[ \t]*\r?\n|[ \t]*$)/.test(agentsText.replace(/^\uFEFF/, '')), false, '.cac/rules/AGENTS.md must never start with YAML frontmatter');
+    assert.match(agentsText, /SiteMaster/);
+    assert.match(agentsText, /\.cac\/rules\/workflow-orchestration\.md/);
+    assert.match(agentsText, /当前项目启动快照/);
+
+    // 3. All 7 core rules (including 7th rule .cac/rules/workflow-orchestration.md) exist and are non-empty
+    const expectedCoreRules = [
+      '.cac/rules/dev-workflow-details.md',
+      '.cac/rules/subagent-dispatch.md',
+      '.cac/rules/workflow-orchestration.md',
+      '.cac/rules/file-structure.md',
+      '.cac/rules/memory-systems.md',
+      '.cac/rules/design-detail.md',
+      '.cac/rules/domain-rulings.md',
+    ];
+    for (const rel of expectedCoreRules) {
+      const full = path.join(target, ...rel.split('/'));
+      assert.equal(fs.existsSync(full), true, `core rule must exist: ${rel}`);
+      const content = fs.readFileSync(full, 'utf8');
+      assert.ok(content.trim().length > 0, `core rule must be non-empty: ${rel}`);
+    }
+
+    // 4. .cac/harness/adapters.json (valid JSON) + .cac/harness/audit/README.md + practical examples & references exist and are non-empty
+    const adaptersFull = path.join(target, '.cac', 'harness', 'adapters.json');
+    assert.equal(fs.existsSync(adaptersFull), true, '.cac/harness/adapters.json must exist');
+    const adaptersRaw = fs.readFileSync(adaptersFull, 'utf8');
+    assert.ok(adaptersRaw.trim().length > 0, '.cac/harness/adapters.json must be non-empty');
+    const adaptersParsed = JSON.parse(adaptersRaw);
+    assert.equal(typeof adaptersParsed === 'object' && adaptersParsed !== null && !Array.isArray(adaptersParsed), true);
+
+    const requiredFusedAssets = [
+      '.cac/harness/audit/README.md',
+      '.cac/skills/product-spec-builder/examples/after-sales-dispatch.md',
+      '.cac/skills/design-brief-builder/examples/after-sales-dispatch-brief.md',
+      '.cac/skills/design-brief-builder/examples/after-sales-dispatch-DESIGN.md',
+      '.cac/skills/arch-designer/examples/after-sales-dispatch-arch.md',
+      '.cac/skills/dfx-designer/examples/after-sales-dispatch-dfx.md',
+      '.cac/skills/design-brief-builder/references/direction-examples.md',
+      '.cac/skills/product-spec-builder/references/discovery-examples.md',
+      '.cac/skills/product-spec-builder/references/discovery-methods.md',
+      '.cac/skills/product-spec-builder/references/reservation-case.md',
+    ];
+    for (const rel of requiredFusedAssets) {
+      const full = path.join(target, ...rel.split('/'));
+      assert.equal(fs.existsSync(full), true, `expected fused asset to be installed: ${rel}`);
+      const text = fs.readFileSync(full, 'utf8');
+      assert.ok(text.trim().length > 0, `expected fused asset to be non-empty: ${rel}`);
+    }
+
+    // 5. All 22 skills and 9 sub-agents exist and are non-empty
+    const skillDirs = fs.readdirSync(path.join(target, '.cac', 'skills'), { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.'));
+    assert.equal(skillDirs.length, 22, `expected 22 skill directories, got ${skillDirs.length}`);
+    for (const d of skillDirs) {
+      const sk = path.join(target, '.cac', 'skills', d.name, 'SKILL.md');
+      assert.equal(fs.existsSync(sk), true, `missing SKILL.md for ${d.name}`);
+      assert.ok(fs.readFileSync(sk, 'utf8').trim().length > 0, `empty SKILL.md for ${d.name}`);
+    }
+
+    const agentFiles = fs.readdirSync(path.join(target, '.cac', 'agents'))
+      .filter((n) => n.endsWith('.md'));
+    assert.equal(agentFiles.length, 9, `expected 9 sub-agent definitions, got ${agentFiles.length}`);
+  });
+
+  test('[Regression HIGH-2] cac-base.mjs rejects bare subcommand typo "package" with exit 2, hints release/pack-check, and never creates ./package directory', () => {
+    const workCwd = nextDir('high2-typo-package-cwd');
+    fs.mkdirSync(workCwd, { recursive: true });
+
+    const rPkg = runNode(CAC_CLI, ['package'], { cwd: workCwd });
+    assert.equal(rPkg.status, 2, `expected exit 2 for "cac-base.mjs package", got ${rPkg.status}: ${rPkg.stderr}`);
+    assert.match(rPkg.stderr, /release/i, 'stderr must suggest "release"');
+    assert.match(rPkg.stderr, /pack-check/i, 'stderr must suggest "pack-check"');
+    assert.equal(fs.existsSync(path.join(workCwd, 'package')), false, 'must NOT create ./package directory');
+    assert.deepEqual(fs.readdirSync(workCwd), [], 'working directory must remain completely empty');
+
+    // Representative bare subcommand typos also fail fast with exit 2 and zero directory creation
+    for (const typo of ['pack', 'check']) {
+      const rTypo = runNode(CAC_CLI, [typo], { cwd: workCwd });
+      assert.equal(rTypo.status, 2, `expected exit 2 for bare typo "${typo}", got ${rTypo.status}`);
+      assert.equal(fs.existsSync(path.join(workCwd, typo)), false, `must NOT create ./${typo} directory`);
+    }
+    assert.deepEqual(fs.readdirSync(workCwd), [], 'working directory must still be completely empty');
+
+    // Explicit --target ./package escape hatch remains valid when user intentionally targets "./package"
+    const rExplicitDry = runNode(CAC_CLI, ['install', '--target', './package', '--dry-run'], { cwd: workCwd });
+    assert.equal(rExplicitDry.status, 0, `explicit --target ./package --dry-run failed: ${rExplicitDry.stderr}`);
+    assert.equal(fs.existsSync(path.join(workCwd, 'package')), false, '--dry-run must still leave zero files');
+  });
 });

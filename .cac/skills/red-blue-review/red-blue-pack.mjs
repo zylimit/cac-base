@@ -33,6 +33,83 @@ function runGit(args, cwd) {
   };
 }
 
+function resolveRealPathBestEffort(p) {
+  const abs = path.resolve(String(p));
+  let cur = abs;
+  const tail = [];
+  for (;;) {
+    try {
+      const real = fs.realpathSync.native ? fs.realpathSync.native(cur) : fs.realpathSync(cur);
+      return tail.length ? path.join(real, ...tail) : real;
+    } catch (_e) {
+      try {
+        const realFallback = fs.realpathSync(cur);
+        return tail.length ? path.join(realFallback, ...tail) : realFallback;
+      } catch (_e2) {
+        const parent = path.dirname(cur);
+        if (parent === cur) return abs;
+        tail.unshift(path.basename(cur));
+        cur = parent;
+      }
+    }
+  }
+}
+
+function normDirKey(p) {
+  if (!p) return '';
+  const abs = resolveRealPathBestEffort(p);
+  const posix = toPosix(abs).replace(/\/+$/, '') || '/';
+  return process.platform === 'win32' ? posix.toLowerCase() : posix;
+}
+
+function sameDir(a, b) {
+  if (!a || !b) return false;
+  return normDirKey(a) === normDirKey(b);
+}
+
+function findCacProjectRoot(startDir, stopAt = null) {
+  if (!startDir) return null;
+  const resolvedStart = path.resolve(String(startDir));
+  const stopKey = stopAt ? normDirKey(stopAt) : '';
+  const homeKey = normDirKey(os.homedir());
+  const tmpKey = normDirKey(os.tmpdir());
+
+  const walkUp = (fromAbs, preserveRawStart) => {
+    let cur = fromAbs;
+    for (;;) {
+      const curKey = normDirKey(cur);
+      if (curKey === homeKey || curKey === tmpKey) break;
+      if (fs.existsSync(path.join(cur, '.cac'))) {
+        const isProjectCac = curKey !== homeKey && curKey !== tmpKey;
+        if (isProjectCac) {
+          return preserveRawStart && cur === fromAbs && fs.existsSync(path.join(String(startDir), '.cac'))
+            ? String(startDir)
+            : cur;
+        }
+      }
+      if (stopKey && curKey === stopKey) break;
+      const parent = path.dirname(cur);
+      if (parent === cur) break;
+      cur = parent;
+    }
+    return null;
+  };
+
+  const direct = walkUp(resolvedStart, true);
+  if (direct) return direct;
+
+  const realStart = resolveRealPathBestEffort(resolvedStart);
+  const lexA = toPosix(resolvedStart).replace(/\/+$/, '') || '/';
+  const lexB = toPosix(realStart).replace(/\/+$/, '') || '/';
+  const sameSpelling = process.platform === 'win32'
+    ? lexA.toLowerCase() === lexB.toLowerCase()
+    : lexA === lexB;
+  if (!sameSpelling) {
+    return walkUp(realStart, false);
+  }
+  return null;
+}
+
 function cleanStaleTempDiffs() {
   const tmpDir = os.tmpdir();
   const now = Date.now();
@@ -95,12 +172,31 @@ function main() {
     }
   }
 
-  const top = runGit(['rev-parse', '--show-toplevel'], process.cwd());
+  const envDir = process.env.CODEAGENT3_PROJECT_DIR || process.env.CAC_PROJECT_DIR;
+  const startDir = (envDir && envDir.trim()) ? path.resolve(envDir.trim()) : process.cwd();
+
+  const top = runGit(['-c', 'core.quotePath=false', 'rev-parse', '--show-toplevel'], startDir);
   if (!top.ok || !top.stdout.trim()) {
     process.stderr.write('red-blue-pack: 不在 git 仓库内\n');
     process.exit(1);
   }
-  const root = top.stdout.trim();
+  const topDir = top.stdout.trim();
+  const cacRoot = findCacProjectRoot(startDir, topDir);
+
+  let root = topDir;
+  let scopedSubdir = false;
+  if (cacRoot) {
+    const ownRepo = sameDir(topDir, cacRoot) || fs.existsSync(path.join(cacRoot, '.git'));
+    if (!ownRepo) {
+      const trackedSubdir = runGit(['ls-files', '--error-unmatch', '.'], cacRoot).ok;
+      if (!trackedSubdir) {
+        process.stderr.write('red-blue-pack: 当前 .cac 项目尚未独立 git init（检测到外层父目录存在 .git），拒绝越界打包父目录仓库\n');
+        process.exit(1);
+      }
+      scopedSubdir = true;
+    }
+    root = cacRoot;
+  }
 
   cleanStaleTempDiffs();
 
@@ -134,8 +230,9 @@ function main() {
   }
 
   const rangeLabel = working ? `${base}..（未提交工作树）` : `${base}..${head}`;
-  const diffArgs = working ? ['diff', base] : ['diff', `${base}..${head}`];
-  const statArgs = working ? ['diff', '--stat', base] : ['diff', '--stat', `${base}..${head}`];
+  const diffRange = working ? [base] : [`${base}..${head}`];
+  const diffArgs = ['-c', 'core.quotePath=false', 'diff', '--relative', ...diffRange, '--', '.'];
+  const statArgs = ['-c', 'core.quotePath=false', 'diff', '--stat', '--relative', ...diffRange, '--', '.'];
 
   const baseSha = runGit(['rev-parse', '--short', base], root).stdout.trim() || '?';
   const headSha = working ? '' : (runGit(['rev-parse', '--short', head], root).stdout.trim() || '?');
@@ -153,7 +250,10 @@ function main() {
 
   if (!working) {
     out.push('### Commit 清单');
-    const logRes = runGit(['log', '--oneline', `${base}..${head}`], root);
+    const logArgs = scopedSubdir
+      ? ['log', '--oneline', `${base}..${head}`, '--', '.']
+      : ['log', '--oneline', `${base}..${head}`];
+    const logRes = runGit(logArgs, root);
     const logLines = logRes.stdout.split('\n').map((s) => s.trim()).filter(Boolean);
     if (logLines.length > 0) {
       for (const l of logLines) out.push(`- ${l}`);
@@ -182,7 +282,7 @@ function main() {
   out.push('');
 
   out.push('### 未跟踪新文件');
-  const untrackedRes = runGit(['ls-files', '--others', '--exclude-standard'], root);
+  const untrackedRes = runGit(['-c', 'core.quotePath=false', 'ls-files', '--others', '--exclude-standard', '--', '.'], root);
   const untracked = untrackedRes.stdout.split('\n').map((s) => s.trim()).filter(Boolean);
   if (untracked.length > 0) {
     for (const f of untracked) out.push(`- ${f}`);

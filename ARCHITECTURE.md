@@ -1,7 +1,7 @@
 # cac-base 架构文档
 
 > 面向 **Windows PowerShell / WSL / Linux** 下 **CodeAgent CLI (`codeagent` / `.cac/`)** 的原生独立全栈工程治理框架。  
-> 版本：1.1.0（2026-11-26） | 能力与方法论蓝本：`cc-base`（2026-11-25） | 宿主实证契约：[docs/HOST-CONTRACT.md](docs/HOST-CONTRACT.md)
+> 版本：1.2.0（2026-11-26） | 能力与方法论蓝本：`cc-base`（2026-11-25） | 宿主实证契约：[docs/HOST-CONTRACT.md](docs/HOST-CONTRACT.md)
 
 ---
 
@@ -18,7 +18,7 @@
 
 | 层级 | 路径 | 职责 |
 |---|---|---|
-| **主控宪法与细则** | `.cac/rules/AGENTS.md` + `.cac/rules/*.md` | 无头 `.cac/rules/AGENTS.md` 启动自动注入（SiteMaster 人设、四分类话术、交互深度四档、10 条铁律、审批三档、强制前置 `Read` 协议）；带 `paths:` 头的细则按需加载防上下文膨胀 |
+| **主控宪法与细则** | `.cac/rules/AGENTS.md` + `.cac/rules/*.md` | 无头 `.cac/rules/AGENTS.md` 启动自动注入（1:1 完整承载 SiteMaster 人设与开场白、四分类话术、交互深度四档、10 条铁律、审批三档、22 Skill 路由、9 角色调度、强制前置 `Read` 协议及开场零探测硬边界）；7 份核心细则（含 `workflow-orchestration.md`）与 2 份大仓扩展细则带 `paths:` 头按需加载防上下文膨胀 |
 | **全流程技能链** | `.cac/skills/`（22 个） | 从需求访谈、架构/DFX、界面规范与原型、开发计划、Task 三档编码闭环、审查/红蓝对抗、独立测试、发布收尾，到人读文档、领域口径与记忆进化 |
 | **主从 Sub-Agent** | `.cac/agents/`（9 个） | 单层扁平编排：`implementer` / `code-reviewer` / `tester` / `deployer` / `researcher` / `feedback-observer` / `evolution-runner` / `progress-recorder` / `domain-recorder` |
 | **三层强制防线** | `.cac/hooks/` + `.cac/githooks/` + `.github/workflows/gate.yml` | 会话内实时拦截（含 Bash + PowerShell 双壳密钥/危险命令地板闸、主从写码隔离、红锁、待审三振、三文件同步）+ Git 提交推送门 + 双平台 CI |

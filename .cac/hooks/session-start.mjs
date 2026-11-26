@@ -1,9 +1,11 @@
-// SessionStart：合并输出 cac-base 核心铁律横幅、当前档位状态、待进化 feedback 催办与脏工作树恢复提示。
+// SessionStart：合并输出 cac-base 核心铁律横幅、当前档位状态、项目启动快照、待进化 feedback 催办与 Git 边界/脏工作树提示。
 // 单次进程启动完成全部检查，并经单条 hookSpecificOutput.additionalContext 注入上下文。
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { projectDir, readStdinJson, readTextFile, git, context, runFailOpen } from './lib/io.mjs';
+import {
+  projectDir, readStdinJson, readTextFile, gitStateOf, isCacRuntimeState, porcelainZ, context, runFailOpen,
+} from './lib/io.mjs';
 
 const BANNER = [
   '🔒 cac-base 核心治理铁律：',
@@ -45,13 +47,49 @@ function checkEvolutionReminder(root) {
   return `📋 项目有 ${pending} 条待处理 feedback（共 ${total} 条）。建议派发 evolution-runner 检查是否有规则/技能进化建议。`;
 }
 
-function checkDirtyWorktreeReminder(root) {
-  const inside = git(['rev-parse', '--is-inside-work-tree'], { cwd: root });
-  if (inside.status !== 0 || inside.stdout.trim() !== 'true') return null;
+const IGNORED_TOP_ENTRIES = new Set([
+  'node_modules',
+  'Thumbs.db',
+  'desktop.ini',
+]);
 
-  const st = git(['status', '--porcelain'], { cwd: root });
+function buildStartupSnapshot(root) {
+  const yn = (rel) => (fs.existsSync(path.join(root, rel)) ? '已存在' : '未创建');
+  const readable = fs.existsSync(path.join(root, 'docs', 'readable', 'index.html')) ? '已生成' : '未初始化';
+
+  let visible = [];
+  try {
+    const entries = fs.readdirSync(root, { withFileTypes: true });
+    visible = entries
+      .filter((e) => !e.name.startsWith('.') && !IGNORED_TOP_ENTRIES.has(e.name))
+      .map((e) => (e.isDirectory() ? `${e.name}/` : e.name))
+      .sort();
+  } catch (_e) {
+    visible = [];
+  }
+
+  const topDesc = visible.length === 0
+    ? '空（仅含隐藏治理目录 .cac/，尚未创建业务代码与文档）'
+    : visible.slice(0, 8).join('、') + (visible.length > 8 ? ` 等共 ${visible.length} 项` : '');
+
+  return [
+    '📍 当前项目启动快照（SessionStart 已实查，首轮打招呼/问路请直接据此秒回，无需再调 Bash/ls/Glob 探测目录）：',
+    `- Product-Spec: ${yn('Product-Spec.md')} | Design-Brief: ${yn('Design-Brief.md')} | DEV-PLAN: ${yn('DEV-PLAN.md')} | progress.md: ${yn('progress.md')} | 人读文档: ${readable}`,
+    `- 顶层可见业务项: ${topDesc}`,
+  ].join('\n');
+}
+
+function checkDirtyWorktreeReminder(root) {
+  const gs = gitStateOf(root);
+  if (!gs.inGit) return null;
+
+  if (!gs.ownRepo && !gs.trackedSubdir) {
+    return 'ℹ️ Git 边界提示：当前项目目录尚未独立执行 git init（检测到外层父目录存在 Git 仓库）。后续如需提交代码，请先在当前目录运行 git init（或确认是否为子目录模式），严禁越界暂存或操作外层父目录的其他项目。';
+  }
+
+  const st = porcelainZ(root);
   if (st.status !== 0) return null;
-  const count = st.stdout.split(/\r?\n/).filter((l) => l.trim() !== '').length;
+  const count = new Set(st.paths.filter((p) => !isCacRuntimeState(p))).size;
   if (count === 0) return null;
 
   return `⚠️ 检测到 git 工作树有 ${count} 处未提交改动——上个会话可能中断或已压缩，progress.md 未必反映最新实况。建议先执行 /recap-project 读 progress.md 并跑 node .cac/scripts/project-status.mjs 校准后再继续。`;
@@ -79,12 +117,15 @@ runFailOpen(async () => {
       const left = tier.sticky === true ? null : hoursLeft(tier.expiresEpoch);
       const span = tier.sticky === true ? 'sticky 到撤销为止' : (left === null ? '无过期时间' : `剩 ${left} h`);
       lines.push(`‼️ tier: fast（${span}${tier.reason ? `，原因：${tier.reason}` : ''}）：治理闸仅提醒不拦截，欠账照常登记（.cac/.runtime/tier.json）。完成后请运行 \`node .cac/harness/harness.mjs tier set standard\` 恢复标准模式。`);
+      if (!quiet && root) {
+        lines.push(buildStartupSnapshot(root));
+      }
       return;
     }
 
     if (quiet) return;
 
-    // 3. 标准/严格/自动升档播报 + 核心铁律横幅
+    // 3. 标准/严格/自动升档播报 + 核心铁律横幅 + 项目启动快照
     if (tier) {
       const hits = (tier.raisedBy || []).slice(0, 3).join('、');
       lines.push(tier.source === 'raise'
@@ -93,8 +134,9 @@ runFailOpen(async () => {
     }
     lines.push(BANNER);
 
-    // 4. 待毕业 feedback 提醒与脏工作树恢复提醒
+    // 4. 启动快照、待毕业 feedback 提醒与 Git 边界/脏工作树恢复提醒
     if (root) {
+      lines.push(buildStartupSnapshot(root));
       const evo = checkEvolutionReminder(root);
       if (evo) lines.push(evo);
       const dirty = checkDirtyWorktreeReminder(root);

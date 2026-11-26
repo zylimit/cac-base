@@ -52,6 +52,6 @@ npm run pack-check
 
 ## 关键文档
 
-- [.cac/rules/AGENTS.md](.cac/rules/AGENTS.md) — 主控宪法与路由表（无 frontmatter，会话启动原生自动注入）
+- [.cac/rules/AGENTS.md](.cac/rules/AGENTS.md) — SiteMaster 主控宪法与全流程路由表（无 frontmatter 会话启动原生自动注入，下辖 7 份核心按需细则与 2 份大仓扩展细则）
 - [ARCHITECTURE.md](ARCHITECTURE.md) — 框架分层架构说明
 - [docs/HOST-CONTRACT.md](docs/HOST-CONTRACT.md) — Windows PowerShell `codeagent` 真机实证协议契约

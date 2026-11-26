@@ -4,8 +4,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  projectDir, readStdinJson, readTextFile, pendingReviewFiles, git, porcelainZ,
-  classifyChange, relToProject, emit, gateModeOf, runFailOpen,
+  projectDir, readStdinJson, readTextFile, pendingReviewFiles, gitStateOf, porcelainZ,
+  classifyChange, emit, gateModeOf, runFailOpen,
 } from './lib/io.mjs';
 import { gateLog } from './lib/gatelog.mjs';
 
@@ -33,23 +33,21 @@ runFailOpen(async () => {
     dirtyReason = `待审清单未清（${pending.length} 个文件待 code review）`;
   }
 
-  if (!dirtyReason && fs.existsSync(path.join(root, 'progress.md'))
-      && git(['rev-parse', '--is-inside-work-tree'], { cwd: root }).status === 0) {
-    const prefix = git(['rev-parse', '--show-prefix'], { cwd: root }).stdout.replace(/\r?\n$/, '');
-    let codeDirty = false;
-    let progDirty = false;
+  if (!dirtyReason && fs.existsSync(path.join(root, 'progress.md'))) {
+    const gs = gitStateOf(root);
+    if (gs.inGit && (gs.ownRepo || gs.trackedSubdir)) {
+      let codeDirty = false;
+      let progDirty = false;
 
-    const take = (p) => {
-      const rel = relToProject(p, prefix);
-      if (rel === null) return;
-      const kind = classifyChange(rel);
-      if (kind === 'progress') progDirty = true;
-      else if (kind === 'code') codeDirty = true;
-    };
-
-    for (const p of porcelainZ(root, ['-uall', '--', '.']).paths) take(p);
-    if (codeDirty && !progDirty) {
-      dirtyReason = '工作树有未提交代码/家底改动但 progress.md 未同步（本轮决策尚未写入项目记忆）';
+      for (const rel of porcelainZ(root, ['-uall', '--', '.']).paths) {
+        if (!rel) continue;
+        const kind = classifyChange(rel);
+        if (kind === 'progress') progDirty = true;
+        else if (kind === 'code') codeDirty = true;
+      }
+      if (codeDirty && !progDirty) {
+        dirtyReason = '工作树有未提交代码/家底改动但 progress.md 未同步（本轮决策尚未写入项目记忆）';
+      }
     }
   }
 

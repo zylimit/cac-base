@@ -89,6 +89,16 @@
       "bytes": 13839
     },
     {
+      "path": ".cac/harness/adapters.json",
+      "sha256": "97865db744e52a0a57945d6af9d109a0d0cb7a741588e3c1acdbbd9421410088",
+      "bytes": 4757
+    },
+    {
+      "path": ".cac/harness/audit/README.md",
+      "sha256": "0d92dfdd1f195c6ce5d73bcd12ba03b27cdfd607f044ee1f79767e4031764eed",
+      "bytes": 22071
+    },
+    {
       "path": ".cac/harness/audit/check-syntax.mjs",
       "sha256": "f27196266181715b63d36461b0c1c2b237b2a96252363561f54fbaf0fa52bb95",
       "bytes": 23233
@@ -115,8 +125,8 @@
     },
     {
       "path": ".cac/harness/lib/core.mjs",
-      "sha256": "8d53cd2fc97a64894b9bcf1c0979f9ddf65d485c077c730098dc874be3767b2f",
-      "bytes": 14523
+      "sha256": "c4050a8195c97244a8a0001acadfc73368eb9e014c3414e3705e0b495a3e6c13",
+      "bytes": 18706
     },
     {
       "path": ".cac/harness/lib/tier.mjs",
@@ -170,8 +180,8 @@
     },
     {
       "path": ".cac/hooks/lib/io.mjs",
-      "sha256": "ab5624eb967159157c515d6764edc5c73e91ffeab7241948711ccd2defe0b474",
-      "bytes": 10641
+      "sha256": "fc9217213d7efa710f3356e424f4d6851d66fac2ac5e52afb11465df43749ad7",
+      "bytes": 18045
     },
     {
       "path": ".cac/hooks/lib/readable-refresh.mjs",
@@ -180,8 +190,8 @@
     },
     {
       "path": ".cac/hooks/lib/tier.mjs",
-      "sha256": "a96d454957a2b51922da8fe42606ca0e583a9a88deea735e6998b82668ac1656",
-      "bytes": 13331
+      "sha256": "dce3c4866a2123ae7afb917df6561abc0da9e6187c2249819d76665c3ed77092",
+      "bytes": 12957
     },
     {
       "path": ".cac/hooks/mark-review-needed.mjs",
@@ -200,13 +210,13 @@
     },
     {
       "path": ".cac/hooks/pre-commit-check.mjs",
-      "sha256": "d13e20477975fd086b480d8de050f959e57619a7b0d3579a2eca45f773fe82de",
-      "bytes": 7566
+      "sha256": "1cb890c103f39d850faaa6349e387f339fbb165290b4f8fbf09a34d75038699b",
+      "bytes": 8226
     },
     {
       "path": ".cac/hooks/precompact-gate.mjs",
-      "sha256": "503512e15c9c1c27cfe2dfb6b781367cb5023388ed0f2a6fb7167bfa7673b3a1",
-      "bytes": 2902
+      "sha256": "b9892eb308bd788b2fa8a92209a49fca508fc13360724ec93a736e93b85889d9",
+      "bytes": 2749
     },
     {
       "path": ".cac/hooks/record-authorship.mjs",
@@ -225,8 +235,8 @@
     },
     {
       "path": ".cac/hooks/session-start.mjs",
-      "sha256": "ba0c9f108810eb83199762105a819e6480d2ac371be49fbe6328f35c30f53939",
-      "bytes": 5308
+      "sha256": "feef18375820cc95498b9c5b3dbe5486eb4734d76138bebe7c70b8e2d5cc09b5",
+      "bytes": 7070
     },
     {
       "path": ".cac/hooks/static-check.mjs",
@@ -250,43 +260,48 @@
     },
     {
       "path": ".cac/hooks/three-file-sync-gate.mjs",
-      "sha256": "dfbccfd9279770e774f7ef0a0e6222d41550dac72cbbe81e3004deba0a0fb279",
-      "bytes": 7678
+      "sha256": "a283dfec68d32b7e0b9991c836c5626c3bd19c3d5e5957b768854a3a9ed09be1",
+      "bytes": 7532
     },
     {
       "path": ".cac/rules/AGENTS.md",
-      "sha256": "540a2a54b689ce83f62255006e789980b46f4a21f721296430cfcfa8a616ac6e",
-      "bytes": 14154
+      "sha256": "c99234fe4c99627abbbdcf17905fb0263fb92ff5778cabbd337134b433bcb8ad",
+      "bytes": 30406
     },
     {
       "path": ".cac/rules/design-detail.md",
-      "sha256": "e769917f5b4f92d1af30842bdfff0ce5ff91db9ecaa0962f8c8e0e72f7ffb7c5",
-      "bytes": 3104
+      "sha256": "f2cb0d2459327010c863e417e73a892b0b3b85fa60466241148c9024963fb09e",
+      "bytes": 7309
     },
     {
       "path": ".cac/rules/dev-workflow-details.md",
-      "sha256": "ae8d74d07ba31cc62dbc69eb2f12d156bc9934f214c4dbb06793aed99fd97705",
-      "bytes": 6928
+      "sha256": "cabd43de8f2452e1e9ccb6b230fc47edcc722b6bebff5a32b3a2ff3ceebe86ea",
+      "bytes": 24258
     },
     {
       "path": ".cac/rules/domain-rulings.md",
-      "sha256": "a65692711d66f167ff057d62f51928b69b460a5b42f7fc2d85153f4221f1be9a",
-      "bytes": 2676
+      "sha256": "2b75bd5d54fb013b4f2c8a17d63d6c0a6405e1715645896dbeff0d46ed9415bc",
+      "bytes": 13147
     },
     {
       "path": ".cac/rules/file-structure.md",
-      "sha256": "bae834006e3e03ac8525805d0d92c89d7d05c5f1809f6a9785af43a65dcc5d77",
-      "bytes": 4827
+      "sha256": "f2c8e0ca58964863620b5714cf22b0174fb7866853e36c064171938c946e47c2",
+      "bytes": 10020
     },
     {
       "path": ".cac/rules/memory-systems.md",
-      "sha256": "1d0c95c9f9fe5efb331bc1fab0006b207ee856abc3b5448a1f295a2f380e838a",
-      "bytes": 2714
+      "sha256": "ae48cfe8570908f7539209687e3b082d2419121f2c60b1bd876fc9a498b2c6af",
+      "bytes": 3120
     },
     {
       "path": ".cac/rules/subagent-dispatch.md",
-      "sha256": "4879a89f3a6de91ad2cb09e12b22cc8e24723b7e446b60c8c9e4bfd32d502643",
-      "bytes": 5424
+      "sha256": "1a0fa47109f478ce948b31145993b777f299b067c158d7c75a9d28b99e0f0724",
+      "bytes": 9288
+    },
+    {
+      "path": ".cac/rules/workflow-orchestration.md",
+      "sha256": "66d112c7035cf03152d13a231d6a98ad724958ae25d048f9f02c628735faaf41",
+      "bytes": 3992
     },
     {
       "path": ".cac/scripts/collect-feedback.mjs",
@@ -300,8 +315,8 @@
     },
     {
       "path": ".cac/scripts/doctor.mjs",
-      "sha256": "62997763fd5a7851890165a0341ccfdfc1011e42e997a20aa5b49c15e1a6ccbe",
-      "bytes": 23027
+      "sha256": "289e89039e6747ff4e9fad0bff38fa8a0171a3e5609c07dfc8ccc36dfa8f6bdf",
+      "bytes": 23055
     },
     {
       "path": ".cac/scripts/gate-audit.mjs",
@@ -605,268 +620,313 @@
     },
     {
       "path": ".cac/skills/arch-designer/SKILL.md",
-      "sha256": "8e3935951d6aa2bbd42db46d1eb482fcbffe4c99883f21b2afa830a8e389b9a2",
-      "bytes": 6632
+      "sha256": "71ddee1a433f582cb08028e8bcb60a4dda0372f833f4deae6fdbd4032df85abf",
+      "bytes": 34956
+    },
+    {
+      "path": ".cac/skills/arch-designer/examples/after-sales-dispatch-arch.md",
+      "sha256": "da6f2152072324effe8f11b7cdafbbb67a865d7cc9677bdfd1262e91a6fbe9e1",
+      "bytes": 15918
     },
     {
       "path": ".cac/skills/arch-designer/references/collaboration-walkthrough.md",
-      "sha256": "d7481bcaf553997e19d47c203ad8184e61f7cad9af02f68395f23dfad95fb919",
-      "bytes": 1499
+      "sha256": "b7a381720db72da99ac493fa22bee95d1a0522d42196a225880f28bfc2f3c72f",
+      "bytes": 8893
     },
     {
       "path": ".cac/skills/arch-designer/references/decision-evaluation.md",
-      "sha256": "2ff73ff515c9bb995973b85c035da6ef798365d3eea0eccfd17286de418f0c24",
-      "bytes": 1543
+      "sha256": "d149585944da5feaad7284e7e8d8617cf0ba692fd4c885e90ce030d2a2f4d2f5",
+      "bytes": 12131
     },
     {
       "path": ".cac/skills/arch-designer/templates/architecture-design-template.md",
-      "sha256": "a3e71101d5f20ea7bd4469730884d48481d10a2c4ac7f89a756bf15322f6a3e8",
-      "bytes": 5722
+      "sha256": "799cd59d2583878a37b0bf536776850dadc2ff2ebe991baf08dff0084fa4e257",
+      "bytes": 6744
     },
     {
       "path": ".cac/skills/arch-designer/templates/design-detail-template.md",
-      "sha256": "bae57be6095a690d0f05de4a875632d9bde4ef2cf86ad824034eb9c46b4d8d18",
-      "bytes": 1769
+      "sha256": "b0ce1a87a512dc8bdd78aad2462eb57ffa94b706422c092727a449298d06fb9a",
+      "bytes": 1631
     },
     {
       "path": ".cac/skills/archive/SKILL.md",
-      "sha256": "3db97ec5b0cb2b1f924fc6d2a14e84237bacf0275374c117a35c1b794cb66b75",
-      "bytes": 1990
+      "sha256": "3c65baf3cbf79f1b1498d788ed5ae9fad20324f1a311e0d27f12d44dd05413a2",
+      "bytes": 1819
     },
     {
       "path": ".cac/skills/branch-finisher/SKILL.md",
-      "sha256": "b03f6eb0c906adcdcc5cd70700d65bb5dc9521c4f0df2961b17ff5b520dad1a2",
-      "bytes": 2857
+      "sha256": "fa606c750ea8965f16750fcbae966a5c4e9a209c41780748dd13919620773939",
+      "bytes": 6412
     },
     {
       "path": ".cac/skills/bug-fixer/SKILL.md",
-      "sha256": "bec31e60611be307da8817ac0e516721ff69cdcf4235f6fc65ff68fd43453716",
-      "bytes": 3373
+      "sha256": "614141ca0d875f191a4ac98e2f7daa05a130347494276cdc7601b7a8fd1e6fe8",
+      "bytes": 5880
     },
     {
       "path": ".cac/skills/bug-fixer/references/diagnostic-loops.md",
-      "sha256": "b0e3aba91ac86128cf3c5716af52d30228358def9113cd274dd230a0062fc4e6",
-      "bytes": 1406
+      "sha256": "0f240ea3707f1504cbbc067568b06994dd20d7963e4142cb50a303b12277b8b7",
+      "bytes": 2916
     },
     {
       "path": ".cac/skills/code-review/SKILL.md",
-      "sha256": "88444467a3e8476c937f5ba55da5ea75ab070037ba0a1bc91a6b266cdcad315f",
-      "bytes": 4667
+      "sha256": "477a2aff155a986b601d02c794f60bc04bb4b6de5e8833f3de078dd08855267a",
+      "bytes": 8842
     },
     {
       "path": ".cac/skills/design-brief-builder/SKILL.md",
-      "sha256": "18d4765cd502957ea21763003d614b1da63a1b4dcb9d204e1efd5be946328da2",
-      "bytes": 5404
+      "sha256": "121dc2c8b69a7b3341a11487e08a0e21ad7ec11a487160c509fbe34b96a9f20b",
+      "bytes": 22740
+    },
+    {
+      "path": ".cac/skills/design-brief-builder/examples/after-sales-dispatch-DESIGN.md",
+      "sha256": "1e49d2514855631c35d983a35dd3be000ef42d37165735d924effd6495618469",
+      "bytes": 7541
+    },
+    {
+      "path": ".cac/skills/design-brief-builder/examples/after-sales-dispatch-brief.md",
+      "sha256": "b46f84374f0b7102f875908a28701c8e25faf15e6f52ef39033cf5ed5e2be583",
+      "bytes": 15069
     },
     {
       "path": ".cac/skills/design-brief-builder/references/agent-ux-patterns.md",
-      "sha256": "eb2ca2615d3ad9132ed35b809c0165df153f7a4efd33341905808c885805c424",
-      "bytes": 1352
+      "sha256": "6f76ef4e910cd16ee509bf29810cf85897bf3b2b4cfd3ab7f705d6620982db8b",
+      "bytes": 4887
+    },
+    {
+      "path": ".cac/skills/design-brief-builder/references/direction-examples.md",
+      "sha256": "a0deff49ba84026102f342f144d44c60cd4a3cb28db00d4756dcbfcadd078220",
+      "bytes": 3399
     },
     {
       "path": ".cac/skills/design-brief-builder/references/question-bank.md",
-      "sha256": "91ab38f7ab85768d863a3d191bc4ee30de3ca8c075d76bc2929dad02ba17c580",
-      "bytes": 2427
+      "sha256": "e9944290c30a3bd075ae2755dca55d74943403a4ec38307cd6797f5ab500cfb5",
+      "bytes": 26932
     },
     {
       "path": ".cac/skills/design-brief-builder/references/style-vocabulary.md",
-      "sha256": "c7935d583ef7f3bff98c58fc436d6c0a2713191de3658755ad0a960e9fc4713e",
-      "bytes": 1953
+      "sha256": "020d2ac52484ac0b4674921256226e0100c710e254749c317d9b02cec6c32dd6",
+      "bytes": 6935
     },
     {
       "path": ".cac/skills/design-brief-builder/references/ui-quality-floor.md",
-      "sha256": "25866e19d41bb4e561da6df210dfbba7ca1940b07f140357d9d609030f8d543b",
-      "bytes": 1954
+      "sha256": "cbd224b457adf01f7771ba970fcff1867cf82495cb28e32d2abdd27e7e36106b",
+      "bytes": 6535
     },
     {
       "path": ".cac/skills/design-brief-builder/references/visual-methods.md",
-      "sha256": "21f997d9f5b87deb44f67b256b3c2eba80d9783daa7c6e4b8f3d5f5adbbbc553",
-      "bytes": 1289
+      "sha256": "1f9c06ca8c24b9e712036f0136b5c432bbeea52c22ad657ad4d200e57b4e4204",
+      "bytes": 12313
     },
     {
       "path": ".cac/skills/design-brief-builder/references/workflow-0-1.md",
-      "sha256": "37628449415a70cd46fe25b283f9a69869e32b178605034961dbe7f336933c96",
-      "bytes": 1281
+      "sha256": "fad6a159798cc95ac1cb6cff5b669b9f8e99623207701cfd5ee8fd893fb148d5",
+      "bytes": 5744
     },
     {
       "path": ".cac/skills/design-brief-builder/references/workflow-iteration.md",
-      "sha256": "d03ea4147e9118720c7e9ca156656f2d9bcadad3dbb6e7c400c03308d3292107",
-      "bytes": 980
+      "sha256": "c2288fe14e2b7a20d91f20cbb402dc2827420cf03e71996a81222f237e70d2d0",
+      "bytes": 2164
     },
     {
       "path": ".cac/skills/design-brief-builder/templates/design-brief-template.md",
-      "sha256": "09e9b0dca04beb8782878a5b3528bedb217ae666229174d25669451dfef17836",
-      "bytes": 4617
+      "sha256": "c0196d491bdb40b8276144a8e75e119d414a4fa4682f7acfd04bcf1bd2684c66",
+      "bytes": 9800
     },
     {
       "path": ".cac/skills/design-brief-builder/templates/design-md-template.md",
-      "sha256": "5b594adbc855353505259976a75208fc5e52930a8c8d2a165bd656a422142192",
-      "bytes": 5487
+      "sha256": "a8f8873666cfe7c358e66b970ff2c8126ebb47c87e386d4fdb8756477341defa",
+      "bytes": 8157
     },
     {
       "path": ".cac/skills/design-maker/SKILL.md",
-      "sha256": "facf397161bc766cdabc14c7073bd4d1198d06ba1171ccdac64b2e42c86341d6",
-      "bytes": 6101
+      "sha256": "e9dc4cda4536b310f751c907885ce3da44751112e184ccd0aa342c4ae7c164c4",
+      "bytes": 35209
     },
     {
       "path": ".cac/skills/design-maker/references/logic-prototype.md",
-      "sha256": "b17a68b5d2a963aae5cd15f848391de6a0166d3dc6be4081e4773fb2b5e03c44",
-      "bytes": 1494
+      "sha256": "0f7e9c780e462c3b2f1452f61d852f9baa3199189e011ff44c25c64a86c5dc20",
+      "bytes": 5522
     },
     {
       "path": ".cac/skills/design-maker/references/prototype-construction.md",
-      "sha256": "30a159f61575de5b89686772f963e4b4f86789a1c46bcc856ab079e2acf6ca3b",
-      "bytes": 1769
+      "sha256": "62b21d18a12a6152eb93d279ac88d869a155c7f8ec11f773fd63066162d47df4",
+      "bytes": 10770
     },
     {
       "path": ".cac/skills/design-maker/references/task-walkthrough.md",
-      "sha256": "af32ff22211f35fb1c4461441a7c28addb536653713d6b5b891501a7d4b5ac78",
-      "bytes": 1208
+      "sha256": "9d5702e9c8f8fac3abf511fb60d566d84009e155e6f6810369c8f7b8b9f35c7f",
+      "bytes": 4097
     },
     {
       "path": ".cac/skills/dev-builder/SKILL.md",
-      "sha256": "7184073f50356d3957b0f53f51a8cd9e8e636a8467344c8b82b66ffb3ca6e805",
-      "bytes": 5706
+      "sha256": "31cf35e741cd77af5cd17d29f53f505618522e8da014f7410ff375f8220b1d86",
+      "bytes": 18496
     },
     {
       "path": ".cac/skills/dev-planner/SKILL.md",
-      "sha256": "2fc7822ae4443f30b83aab1e3300624abcb0798b406ea8d5e881b7986bd1e3e1",
-      "bytes": 5005
+      "sha256": "1a8fae599fdd987da806b2378333cc31f51db45129aa3f86e8b59b07fc019204",
+      "bytes": 17454
     },
     {
       "path": ".cac/skills/dev-planner/references/acceptance-and-dependencies.md",
-      "sha256": "d7038999b932af9a99c558ae506c5141bb2f3f1c8af53f1044fe44b9d9943da4",
-      "bytes": 1588
+      "sha256": "adb666842a5fb0a94be9ff82761388583df7583f203c267eb6e4809ed547b42e",
+      "bytes": 9651
     },
     {
       "path": ".cac/skills/dev-planner/templates/dev-plan-template.md",
-      "sha256": "ebe87d1d003bd90f878a9a391d9beb38e1f08d443a495cf17d6b3b0311053f4e",
-      "bytes": 3749
+      "sha256": "fdf7009ae31107c838aad997dea215377c0f252e6c4de544eb47e5e07eb32294",
+      "bytes": 9128
     },
     {
       "path": ".cac/skills/dfx-designer/SKILL.md",
-      "sha256": "63b8b8a8b50ecaf350986df1c10f9cf14b2d349d16266388edb0e9442faf6eb0",
-      "bytes": 6584
+      "sha256": "5f56d470adf776740e205156b502f8677ad6bdbe3a6840e06aa55f2686b39708",
+      "bytes": 33706
+    },
+    {
+      "path": ".cac/skills/dfx-designer/examples/after-sales-dispatch-dfx.md",
+      "sha256": "545379a8ff13358e64660a7364ee13f4ff603f521b83218b4b298082268c6fc2",
+      "bytes": 10282
     },
     {
       "path": ".cac/skills/dfx-designer/references/measurement-methods.md",
-      "sha256": "1cb30fa8ffc8d9c0a46e9e8f355fc772a3ca28a2e8aaa135f75464226519b07d",
-      "bytes": 1909
+      "sha256": "fbcbb2f6ea0a3dc9bb44b2e88e8df7c9b92e9f147ed599640af74aeb4c0558ee",
+      "bytes": 13777
     },
     {
       "path": ".cac/skills/dfx-designer/templates/dfx-spec-template.md",
-      "sha256": "ea88a2c46451a9bb089d1ed86e3e8d3261c8b0f681f62a0e534de04bbef8db75",
-      "bytes": 6413
+      "sha256": "165fce3159a95e53c1515880096d8a7037367615aeafec0ff688fa4859fe667c",
+      "bytes": 8212
     },
     {
       "path": ".cac/skills/domain-rulings/SKILL.md",
-      "sha256": "121a94b8da14264d21a42c865d758a5a2203c1c0d25ca7b8fcc14da1329d7166",
-      "bytes": 3381
+      "sha256": "dca4f4a7dfcdf72a242afeb18708b66571d4491ad9aa0566f240e3c6758979c4",
+      "bytes": 10716
     },
     {
       "path": ".cac/skills/evolution-engine/SKILL.md",
-      "sha256": "da759f042882c6fbcd95e23bc950da530055e72948cda80b85d947150eff0706",
-      "bytes": 3625
+      "sha256": "2c4c3246990ef3b14fce44ac7e7abe019bc48a8556c5f2c5626493d4f85e3086",
+      "bytes": 5832
     },
     {
       "path": ".cac/skills/feedback-writer/SKILL.md",
-      "sha256": "6faf14d5c7e0f054a2c054c8ffe77a4b62238071dcc9e4615ed6296e3212850b",
-      "bytes": 2986
+      "sha256": "cf15574316e5a4b8531726754f6bf170d1218deba6e5268fc459a01dd5349719",
+      "bytes": 4172
     },
     {
       "path": ".cac/skills/product-spec-builder/SKILL.md",
-      "sha256": "2408e7c56b3981481048ad85d5998374674eaa98b3b5f05ff0fcb4ea77c927fa",
-      "bytes": 9379
+      "sha256": "852386f8d7bc1e5d5fda02a8a7c7e4ef20bde50735d5089d309cda8cbfaea2e1",
+      "bytes": 36593
+    },
+    {
+      "path": ".cac/skills/product-spec-builder/examples/after-sales-dispatch.md",
+      "sha256": "6a9ecff7a19cde294512177fec76b84e5f797bd6bcc400e728d0cb132457d078",
+      "bytes": 12942
+    },
+    {
+      "path": ".cac/skills/product-spec-builder/references/discovery-examples.md",
+      "sha256": "0f910311fa3473288d93dc37eb461901b838130588c5e972855136c1d4012775",
+      "bytes": 5261
+    },
+    {
+      "path": ".cac/skills/product-spec-builder/references/discovery-methods.md",
+      "sha256": "df38eb94b271ce3f906c554b1c9fd8c0398e367ac733e344293000fd2937ab05",
+      "bytes": 12418
     },
     {
       "path": ".cac/skills/product-spec-builder/references/elicitation-menu.md",
-      "sha256": "069fa161f31773e63576f3811809d4deafc977fa495c9498108d358e21d8c529",
-      "bytes": 1318
+      "sha256": "c2fe5349e4f664f68a98bc8bb68bca540852f6ebfa95fe210437ec3d60680833",
+      "bytes": 3197
     },
     {
       "path": ".cac/skills/product-spec-builder/references/interview-principles.md",
-      "sha256": "2f25f43f5a938565db16775fb2e7675311a206c3b13ec94c6d95b54b2895f177",
-      "bytes": 3338
+      "sha256": "0b7aa8bae13adac0104b373e7d37bfbaf319b5b3a83ede0f4780a40d3cefa4da",
+      "bytes": 8610
     },
     {
       "path": ".cac/skills/product-spec-builder/references/question-bank.md",
-      "sha256": "a9521283d0f2fa9a562ee06324e85ecad50bddf3a751d56b987112ecdb6aca4e",
-      "bytes": 3502
+      "sha256": "3a563002aab08abf34b48dbe44bc648b0d4a2a8478f8ab88dc94521d0d8e9170",
+      "bytes": 18307
+    },
+    {
+      "path": ".cac/skills/product-spec-builder/references/reservation-case.md",
+      "sha256": "f27b1df6427941bddefb55421c171a448659e5ab6e421a8588b80fb1f3800370",
+      "bytes": 4473
     },
     {
       "path": ".cac/skills/product-spec-builder/references/spec-self-review.md",
-      "sha256": "344d34059bb4de58cf60451ba92aa01d7ed29a350b1e41844889b588557b928a",
-      "bytes": 1563
+      "sha256": "a3a6e27bf1eb51318664154b15df5f06f798ab903b2b742ef7f7e2cb6f060156",
+      "bytes": 3807
     },
     {
       "path": ".cac/skills/product-spec-builder/references/third-party-questionnaire.md",
-      "sha256": "723bab2a4097313ab1b63571ae6d8df87106a800973cc0e859f0d0d49c7c59ee",
-      "bytes": 1013
+      "sha256": "1b5f53be3257cff936a77ccd0ca013ffccdd5644001d380c532ba04df5949068",
+      "bytes": 4615
     },
     {
       "path": ".cac/skills/product-spec-builder/references/workflow-0-1.md",
-      "sha256": "4b19fad9cc785358a67e848ce3b93bf871aa7aa44fb03ab03f14e2badef9207b",
-      "bytes": 2155
+      "sha256": "cceaed8170a6331ff300cb35e884398a4ad44862b721f0e8305b6e380113d553",
+      "bytes": 4896
     },
     {
       "path": ".cac/skills/product-spec-builder/references/workflow-iteration.md",
-      "sha256": "2548c709b673c3b5e28213a8445a12dc660035192432e508b36039f48ea3c269",
-      "bytes": 1771
+      "sha256": "322d13758bf70533311eab18b2104d23523fa5bd1c97f59b5336fc4dc27500fe",
+      "bytes": 5251
     },
     {
       "path": ".cac/skills/product-spec-builder/templates/changelog-template.md",
-      "sha256": "69b912187a180e1c68cbf0850b3c2065cd510dc298bc0e71ce2bb035a951693d",
-      "bytes": 1543
+      "sha256": "6765f634142e5d9549317126d8d255cfbb50cd04e831281168f10f92bd726334",
+      "bytes": 3913
     },
     {
       "path": ".cac/skills/product-spec-builder/templates/product-spec-template.md",
-      "sha256": "ccb372b5e260f6709d869e745bb8cbbf881824a7be13e43fb6a441f0ec51467c",
-      "bytes": 7204
+      "sha256": "b06da3077d503cb10f39baef1e2a7b415eae01381b5fe85bdbfb1b3a9af8bb9d",
+      "bytes": 9582
     },
     {
       "path": ".cac/skills/progress-recorder/SKILL.md",
-      "sha256": "beec6c2b61c0ca6c7cf01c68203d91f301c97065f5980c9a39c6ddd62211960c",
-      "bytes": 3547
+      "sha256": "633b98f7f60f689348bbcd7d238d038517699ffd95ae6192aa3df4bfb8b6466b",
+      "bytes": 15397
     },
     {
       "path": ".cac/skills/readable-docs/SKILL.md",
-      "sha256": "7e73eabad90bf1aabdf7058b36bb0670b0dcb31b4b1eec2e049122927e8d100c",
-      "bytes": 5758
+      "sha256": "cc09079e1936956b4052d43949605b0f284783b5322ec1769c45c17c5a9c7c1a",
+      "bytes": 20608
     },
     {
       "path": ".cac/skills/readable-docs/references/dispatch-templates.md",
-      "sha256": "c110e4f0493c4a1b8c764ef3218d00ea616d65d79639d0d62c33946dd2d0c9b5",
-      "bytes": 2812
+      "sha256": "f01445f52f05af58a266c409bb5bb8cfc83234c2bbd6bd57d6bd71b415e8517e",
+      "bytes": 12405
     },
     {
       "path": ".cac/skills/readable-docs/references/reading-the-numbers.md",
-      "sha256": "54acab8a678a4517f86be469a0b615c8ca4d1ff98487243939b47d69675ee2f7",
-      "bytes": 2012
+      "sha256": "a636e02c9638449e9a5b89eb844c154face3423ceade1b6ba21ee4a8542d28dc",
+      "bytes": 7960
     },
     {
       "path": ".cac/skills/readable-docs/references/sample-notes.md",
-      "sha256": "e6038e65ff690d672d54ec1cbb13b495db27f37f382e6c37d1ed595547f1472c",
-      "bytes": 2268
+      "sha256": "c38a206e82e5661e0646bd785a902fb920fe03ad9419665295595e1b337dff40",
+      "bytes": 5223
     },
     {
       "path": ".cac/skills/recap-project/SKILL.md",
-      "sha256": "b92bd111ea7bc040cbd3140cc57a3f589ef46b6abef7d746aee30e39db269887",
-      "bytes": 2302
+      "sha256": "d744e23bf0ef2091dd8981756ff0286bc51fb37ce5ded7980d263df13c63fee5",
+      "bytes": 2202
     },
     {
       "path": ".cac/skills/record/SKILL.md",
-      "sha256": "f4dca4241a73d32254758706da6fb7031e9ffbbf65ec6ff38333ee3292cd358b",
-      "bytes": 1767
+      "sha256": "1d040e6b8ee0eee9e7efc603028402e2b6999fc477f95436b18458f372940fcd",
+      "bytes": 1301
     },
     {
       "path": ".cac/skills/red-blue-review/RED-BLUE-REVIEW.md",
-      "sha256": "02ecf53db8bd9fb4f38c69932f8a598afd5bc4dbca9ee0bd5298a9b936b622fd",
-      "bytes": 1886
+      "sha256": "b3ab6aabd45f77f7e55cc25b408dbc608afeebe6226b839964aa8dde4b7a0b05",
+      "bytes": 2119
     },
     {
       "path": ".cac/skills/red-blue-review/SKILL.md",
-      "sha256": "30122f5a36824fa844fbbc98b4d1d850dd2fcb76e5cf7aff11a778702569dc36",
-      "bytes": 5068
+      "sha256": "bfc1c17a433bd7e3f397f5de0dc2357626deb04fa1c5c400816344525f422fed",
+      "bytes": 8843
     },
     {
       "path": ".cac/skills/red-blue-review/prompts/blue-team-prompt.md",
@@ -885,33 +945,33 @@
     },
     {
       "path": ".cac/skills/red-blue-review/red-blue-pack.mjs",
-      "sha256": "ee55b02bb1c54ede1a0c2c1f6206a46945221e3993a3fa1446332df59d107e09",
-      "bytes": 7524
+      "sha256": "ac758f7804ba484e290c854ea8525c694889892d57d332c2f7e71aa200ec4e51",
+      "bytes": 10968
     },
     {
       "path": ".cac/skills/release-builder/SKILL.md",
-      "sha256": "de364ab92e58272967539ff70a5b5cacd9fba3d0b3237f6cf87059847acbcbec",
-      "bytes": 4413
+      "sha256": "bfc3b0a99ac7f510990dcaca1e14d58be7980b68999e63bec7de7e8d2c8d76f3",
+      "bytes": 5600
     },
     {
       "path": ".cac/skills/skill-builder/SKILL.md",
-      "sha256": "e8182f19f63ad6845bbcceac21eca5e12b8ce0c303cd0008e85648f6ce8cb4e5",
-      "bytes": 3116
+      "sha256": "5bd2588ebf4a8083e3972acfdff4006856d9321dd9aa435d7be38934a890f7ff",
+      "bytes": 8364
     },
     {
       "path": ".cac/skills/skill-builder/templates/skill-template.md",
-      "sha256": "a91eb77500b872654a8158d9f7c8629acfe4c81a5549db8bc9ef45b11697d1e1",
-      "bytes": 1414
+      "sha256": "30dc353adbd7faaa084e5ec8befed4bb03a309e704fa6572c10804e44418cf6b",
+      "bytes": 2794
     },
     {
       "path": ".cac/skills/test-builder/SKILL.md",
-      "sha256": "708ce3733d6c0952c3fc250d15e016334d38c4917a6209a63f68437aa8f42723",
-      "bytes": 3497
+      "sha256": "87cbaa0f69a9a090bac2b3e4943fc22c8ed9b4d82eed557b538bb7d5568a1bef",
+      "bytes": 5543
     },
     {
       "path": ".cac/skills/test-builder/templates/test-scaffold.md",
-      "sha256": "f8c37547c632b5650cd652e1b1a31d28014e9c00e8fb9c88dd83cdb859f0546b",
-      "bytes": 1498
+      "sha256": "b2e8bcde6740bc743ed02fe656c526e8fa8e3499620334f7cbe73635a5bd17b1",
+      "bytes": 2119
     }
   ]
 }

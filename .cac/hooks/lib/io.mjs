@@ -6,6 +6,7 @@
 // 输出一律 fs.writeSync：管道下 process.stdout.write 异步退出会截断 JSON。
 // 所有子进程调用统一 shell: false + windowsHide: true。
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { isatty } from 'node:tty';
@@ -107,9 +108,156 @@ export function git(args, opts = {}) {
   return run('git', args, opts);
 }
 
+/** 规范化目录身份键（解析符号链接/8.3 短路径、正斜杠化、Windows 下忽略盘符与目录大小写）。 */
+function normDirKey(p) {
+  if (!p) return '';
+  let abs = path.resolve(String(p));
+  try {
+    abs = fs.realpathSync.native ? fs.realpathSync.native(abs) : fs.realpathSync(abs);
+  } catch (_e) {
+    try { abs = fs.realpathSync(abs); } catch (_e2) { /* keep abs */ }
+  }
+  const posix = toPosix(abs).replace(/\/+$/, '') || '/';
+  return process.platform === 'win32' ? posix.toLowerCase() : posix;
+}
+
+/** 判断两个路径是否指向同一目录。 */
+export function sameDir(a, b) {
+  if (!a || !b) return false;
+  return normDirKey(a) === normDirKey(b);
+}
+
+function resolveRealPathBestEffort(p) {
+  const abs = path.resolve(String(p));
+  let cur = abs;
+  const tail = [];
+  for (;;) {
+    try {
+      const real = fs.realpathSync.native ? fs.realpathSync.native(cur) : fs.realpathSync(cur);
+      return tail.length ? path.join(real, ...tail) : real;
+    } catch (_e) {
+      try {
+        const realFallback = fs.realpathSync(cur);
+        return tail.length ? path.join(realFallback, ...tail) : realFallback;
+      } catch (_e2) {
+        const parent = path.dirname(cur);
+        if (parent === cur) return abs;
+        tail.unshift(path.basename(cur));
+        cur = parent;
+      }
+    }
+  }
+}
+
+/**
+ * 从 startDir 向上（不超过 stopAt）寻找最近的 .cac 项目根目录。
+ * 绝不将用户全局配置目录 ~/.cac 或系统临时根 os.tmpdir() 误判为项目根；
+ * 当 startDir 含软链而词法父链未命中 .cac 时，自动沿物理 realpath 二次向上查找以防绕过 .cac 逃逸至外层 .git。
+ */
+export function findCacProjectRoot(startDir, stopAt = null) {
+  if (!startDir) return null;
+  const resolvedStart = path.resolve(String(startDir));
+  const stopKey = stopAt ? normDirKey(resolveRealPathBestEffort(stopAt)) : '';
+  const homeKey = normDirKey(os.homedir());
+  const tmpKey = normDirKey(os.tmpdir());
+
+  const walkUp = (fromAbs, preserveRawStart) => {
+    let cur = fromAbs;
+    for (;;) {
+      const curKey = normDirKey(cur);
+      if (curKey === homeKey || curKey === tmpKey) break;
+      if (fs.existsSync(path.join(cur, '.cac'))) {
+        const isProjectCac = curKey !== homeKey && curKey !== tmpKey;
+        if (isProjectCac) {
+          return preserveRawStart && cur === fromAbs && fs.existsSync(path.join(String(startDir), '.cac'))
+            ? String(startDir)
+            : cur;
+        }
+      }
+      if (stopKey && curKey === stopKey) break;
+      const parent = path.dirname(cur);
+      if (parent === cur) break;
+      cur = parent;
+    }
+    return null;
+  };
+
+  const direct = walkUp(resolvedStart, true);
+  if (direct) return direct;
+
+  const realStart = resolveRealPathBestEffort(resolvedStart);
+  const lexA = toPosix(resolvedStart).replace(/\/+$/, '') || '/';
+  const lexB = toPosix(realStart).replace(/\/+$/, '') || '/';
+  const sameSpelling = process.platform === 'win32'
+    ? lexA.toLowerCase() === lexB.toLowerCase()
+    : lexA === lexB;
+  if (!sameSpelling) {
+    return walkUp(realStart, false);
+  }
+  return null;
+}
+
+/**
+ * 探测目录 root 的 Git 边界状态，区分自有仓库与外层祖先目录误建的 .git：
+ * - ownRepo: topLevel 与 root 为同一目录，或 root/.git 存在（兼容 submodule/worktree）
+ * - inheritedParentGit: inGit && !ownRepo && root/.cac 存在（外层父目录有 .git，当前 .cac 项目尚未独立 git init）
+ * - trackedSubdir: !ownRepo 时当前子目录是否有已被外层仓库索引追踪的文件（区分有意 monorepo 子包与未初始化空项目）
+ */
+export function gitStateOf(root) {
+  const target = root ? String(root) : process.cwd();
+  const rev = git(['-c', 'core.quotePath=false', 'rev-parse', '--show-toplevel', '--show-prefix'], { cwd: target });
+  if (rev.status !== 0) {
+    return {
+      inGit: false,
+      ownRepo: false,
+      topLevel: null,
+      prefix: '',
+      inheritedParentGit: false,
+      trackedSubdir: false,
+      status: rev.status,
+      error: rev.error,
+      stderr: rev.stderr,
+    };
+  }
+  const lines = String(rev.stdout || '').replace(/\r/g, '').split('\n');
+  const topLevel = (lines[0] || '').trim() || null;
+  const prefix = toPosix(lines[1] || '');
+  if (!topLevel) {
+    return {
+      inGit: false,
+      ownRepo: false,
+      topLevel: null,
+      prefix: '',
+      inheritedParentGit: false,
+      trackedSubdir: false,
+      status: rev.status,
+      error: rev.error,
+      stderr: rev.stderr,
+    };
+  }
+  const ownRepo = sameDir(topLevel, target) || fs.existsSync(path.join(target, '.git'));
+  const hasCac = fs.existsSync(path.join(target, '.cac'));
+  const inheritedParentGit = Boolean(!ownRepo && hasCac);
+  const trackedSubdir = !ownRepo
+    ? git(['ls-files', '--error-unmatch', '.'], { cwd: target }).status === 0
+    : false;
+  return {
+    inGit: true,
+    ownRepo,
+    topLevel,
+    prefix: ownRepo ? '' : prefix,
+    inheritedParentGit,
+    trackedSubdir,
+    status: 0,
+    error: null,
+    stderr: '',
+  };
+}
+
 /**
  * 项目根目录解析优先级（HOST-CONTRACT §1）：
- * CODEAGENT3_PROJECT_DIR → CAC_PROJECT_DIR → ev.cwd → git rev-parse --show-toplevel → process.cwd()
+ * CODEAGENT3_PROJECT_DIR → CAC_PROJECT_DIR → ev.cwd → 最近的 .cac 项目根 → git rev-parse --show-toplevel → process.cwd()
+ * 绝不越过含 .cac/ 的项目目录向上逃逸到外层父目录的 show-toplevel。
  */
 export function projectDir(ev = null) {
   const envDir = process.env.CODEAGENT3_PROJECT_DIR || process.env.CAC_PROJECT_DIR;
@@ -117,9 +265,15 @@ export function projectDir(ev = null) {
   if (ev && typeof ev === 'object' && typeof ev.cwd === 'string' && ev.cwd.trim()) {
     return ev.cwd.trim();
   }
-  const top = git(['rev-parse', '--show-toplevel']);
-  if (top.status === 0 && top.stdout.trim()) return top.stdout.trim();
-  return process.cwd();
+  const cwd = process.cwd();
+  const directCac = findCacProjectRoot(cwd, cwd);
+  if (directCac) return directCac;
+  const top = git(['-c', 'core.quotePath=false', 'rev-parse', '--show-toplevel'], { cwd });
+  const topDir = (top.status === 0 && top.stdout.trim()) ? top.stdout.trim() : null;
+  const cacRoot = findCacProjectRoot(cwd, topDir);
+  if (cacRoot) return cacRoot;
+  if (topDir) return topDir;
+  return cwd;
 }
 
 /** 待审清单文本 → 尚未清空的文件行（去空白行与 'clean' 标记）。 */
@@ -185,22 +339,75 @@ export function denyTool(reason) {
   process.exitCode = 0;
 }
 
+const CAC_RUNTIME_STATE_PREFIXES = [
+  '.cac/.runtime/',
+  '.cac/evidence/',
+  '.cac/harness/receipts/',
+  '.cac/harness/waivers/',
+  '.cac/harness/trend/',
+  '.cac/harness/state/',
+  '.cac/harness/evidence/',
+  '.cac/agent-memory/',
+  '.cac/worktrees/',
+];
+
+const CAC_RUNTIME_STATE_FILES = new Set([
+  '.cac/.needs-review',
+  '.cac/.needs-review.lock',
+  '.cac/.red-verified',
+  '.cac/.tdd-exempt',
+  '.cac/.tdd-gate-advised',
+  '.cac/.stop-gate-strikes',
+  '.cac/.stop-gate-advised',
+  '.cac/.three-file-sync-advised',
+  '.cac/.precompact-block-epoch',
+  '.cac/.subagent-reminded',
+  '.cac/.fast-mode',
+  '.cac/.static-gate',
+  '.cac/.degraded-review',
+  '.cac/.async-verify-last',
+  '.cac/signals.jsonl',
+  '.cac/settings.local.json',
+  '.cac/.credentials.json',
+]);
+
+/** 判断相对项目根路径是否属于 .cac 运行态文件。 */
+export function isCacRuntimeState(rawPath) {
+  const p = toPosix(rawPath);
+  if (CAC_RUNTIME_STATE_FILES.has(p) || p.endsWith('/signals.jsonl')) return true;
+  return CAC_RUNTIME_STATE_PREFIXES.some((pre) => p.startsWith(pre));
+}
+
 /**
  * 解析 `git status --porcelain -z`：NUL 分隔、core.quotePath=false 保全中文与空格文件名，
  * R/C 记录附带的旧路径一并计入改动集。
+ * 当 root 位于外层 Git 仓库子目录（prefix 非空）时，自动限定 `-- .` 并用 relToProject 剥去前缀，
+ * 过滤掉一切外层父目录或隔壁兄弟项目的文件，永远只返回相对 root 自身的路径。
  */
 export function porcelainZ(root, extraArgs = []) {
-  const st = git(['-c', 'core.quotePath=false', 'status', '--porcelain', '-z', ...extraArgs], { cwd: root });
+  const gs = gitStateOf(root);
+  if (!gs.inGit) {
+    return { status: gs.status, error: gs.error, stderr: gs.stderr, paths: [] };
+  }
+  const effectivePrefix = gs.ownRepo ? '' : gs.prefix;
+  const scopedArgs = effectivePrefix && !extraArgs.includes('--')
+    ? [...extraArgs, '--', '.']
+    : extraArgs;
+  const st = git(['-c', 'core.quotePath=false', 'status', '--porcelain', '-z', ...scopedArgs], { cwd: root });
   const recs = String(st.stdout || '').split('\0');
   const paths = [];
   for (let i = 0; i < recs.length; i++) {
     const rec = recs[i];
     if (!rec) continue;
     const status = rec.slice(0, 2);
-    paths.push(toPosix(rec.slice(3)));
+    const p1 = relToProject(rec.slice(3), effectivePrefix);
+    if (p1) paths.push(p1);
     if (/^[RC]/.test(status) || /^.[RC]/.test(status)) {
       i += 1;
-      if (recs[i]) paths.push(toPosix(recs[i]));
+      if (recs[i]) {
+        const p2 = relToProject(recs[i], effectivePrefix);
+        if (p2) paths.push(p2);
+      }
     }
   }
   return { status: st.status, error: st.error, stderr: st.stderr, paths };
@@ -230,11 +437,16 @@ export function classifyChange(rawPath) {
   return 'other';
 }
 
-/** 剥掉仓根到项目子目录的前缀；不在项目子树内返回 null。 */
+/** 剥掉仓根到项目子目录的前缀；不在项目子树内返回 null（Windows 下大小写不敏感匹配）。 */
 export function relToProject(p, prefix) {
   const norm = toPosix(p);
   if (!prefix) return norm;
   const normPrefix = toPosix(prefix);
+  if (process.platform === 'win32') {
+    return norm.toLowerCase().startsWith(normPrefix.toLowerCase())
+      ? norm.slice(normPrefix.length)
+      : null;
+  }
   return norm.startsWith(normPrefix) ? norm.slice(normPrefix.length) : null;
 }
 

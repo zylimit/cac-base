@@ -12,6 +12,18 @@
 
 ## Decisions
 
+- 2026-11-27: 闭环 `cac-base` v1.2.0 三阶段审查检出的全部 12 项问题（3 HIGH / 5 MEDIUM / 4 LOW），保持 194 个受管文件清单零漂移零泄漏。
+  - 依据：三阶段审查发现模板路径笔误（`feedback-topic-template.md`）、遗留子命令引用与裸词误装风险（`cac-base.mjs package`）、`pre-commit-check.mjs` 与 `red-blue-pack.mjs` 未接入外层父目录 `.git` 边界守卫、无首提空仓 `HEAD` 暂存改动不可见、软链子目录 `findCacProjectRoot` 绕过与 `tmpKey` 排除、Windows `relToProject` 大小写及 `session-start` `trackedSubdir` 误告警、`audit/README.md` 残留旧版单文件与虚构白名单描述，以及 4 处悬空引用与 `rules-audit` 扫描目录缺口。
+  - 适用范围：`.cac/skills/{feedback-writer,readable-docs}/SKILL.md`、`.cac/skills/red-blue-review/{SKILL.md,RED-BLUE-REVIEW.md,red-blue-pack.mjs}`、`.cac/skills/product-spec-builder/references/discovery-methods.md`、`scripts/cac-base.mjs`、`.cac/hooks/{pre-commit-check,session-start}.mjs`、`.cac/hooks/lib/io.mjs`、`.cac/harness/lib/core.mjs`、`.cac/harness/ext/{rules.mjs,rules/harness-large-repo.md}`、`.cac/harness/audit/README.md`、`docs/HOST-CONTRACT.md`、`.cac/FRAMEWORK-MANIFEST.json`。
+  - 取代：未拦裸词误输 `package` 的 CLI 解析、无 `gitStateOf`/`--relative -- .` 的提交钩子与证据打包器、仅对比 `HEAD` 的空仓 diff 计算、单遍词法向上查找的 `findCacProjectRoot`，以及含虚构 `instructions-allowlist.json` 的旧版审计文档。
+- 2026-11-26: 将 `cc-base` 全量原文手搓细节（主控宪法 `CLAUDE.md` 全文含 `SiteMaster` ASCII 开场白、7 份核心细则、2 份大仓扩展细则、22 个 Skill 全量正文与新增 12 份案例/参考/适配器文档）1:1 无损融合至 `cac-base` 原生 `.cac/` 体系，补登 `workflow-orchestration` 至 `doctor.mjs` 核心细则清单并定版 `v1.2.0`（194 个受管文件、0 seeded 文件）。
+  - 依据：早期重写阶段对主控宪法、细则与技能正文做过结构提炼，损失了 `cc-base` 大量实战沉淀的判据例子、话术护栏与 `SiteMaster` 标志性开场白；在保持 `.cac/rules/AGENTS.md` 绝无 YAML frontmatter、异构宿主查证真机探针铁律、9 角色显式上下文摘录编排、`SessionStart` 开场快照零工具秒回与 `.cac/` 根硬边界等 `cac-base` 专属实证能力不丢分毫的前提下，1:1 无损补齐全部原文血肉。
+  - 适用范围：`.cac/rules/AGENTS.md`、`.cac/rules/*.md`（含新增 `workflow-orchestration.md`）、`.cac/harness/ext/rules/*.md`、`.cac/skills/**`、`.cac/harness/adapters.json`、`.cac/harness/audit/README.md`、`.cac/scripts/doctor.mjs`、`.cac/FRAMEWORK-MANIFEST.json`、`package.json`、`ARCHITECTURE.md`、`README.md`。
+  - 取代：v1.0.0–v1.1.1 中经压缩改写的精简版 `.cac/rules/AGENTS.md`（92 行）与缩写版规则/技能文本，以及 `doctor.mjs` 仅校验 6 份核心细则的旧清单。
+- 2026-11-26: 锁死 `.cac/` 项目根硬边界防外层父目录 `.git` 越界逃逸，并在 `SessionStart` 预注入项目启动快照实现新项目开场寒暄零工具调用秒回（升级至 `v1.1.1`）。
+  - 依据：Windows 真机新项目实跑暴露外层祖先目录误建 `.git` 时，`git rev-parse --show-toplevel` 与无路径限定的 `git status --porcelain` 会越界跳往父目录，把兄弟项目脏文件误报为当前工作树改动或触发 `raise` 升档；同时 `v1.1.0` 根目录零入侵使新目录仅含隐藏的 `.cac/`，常规 `ls` 返回空引发模型连发 8 次工具探测甚至越界翻阅父目录。通过在 `io.mjs`/`tier.mjs`/`core.mjs` 引入 `gitStateOf` 与 `.cac` 祖先边界锁死（并免疫用户全局 `~/.cac`）、子目录 `porcelainZ` 限定 `-- .` 剥离前缀，搭配 `session-start.mjs` 毫秒级启动快照与 `.cac/rules/AGENTS.md` 硬规则，彻底闭环两类问题。
+  - 适用范围：`.cac/hooks/lib/{io,tier}.mjs`、`.cac/hooks/{session-start,three-file-sync-gate,precompact-gate}.mjs`、`.cac/harness/lib/core.mjs`、`.cac/rules/AGENTS.md`、`package.json`、`ARCHITECTURE.md`。
+  - 取代：未校验 `ownRepo` 直接调用 `git rev-parse --show-toplevel` / 无前缀剥离的 `porcelainZ`，以及开场未预注目录快照需模型自行探测目录的旧实现。
 - 2026-11-26: 固化「异构宿主与 CLI 规则必先查官方文档并跑真机探针实测」至 `.cac/rules/AGENTS.md` 铁律 3（同步登记 `.cac/feedback/verify-before-claiming.md` 并毕业），并闭环三阶段代码审查全部 5 项问题（哨兵已删未暂存文件跳过与 `gitIndexSet()` 暂存索引集、下游 `rules-audit` 外部安装器识别与大小写不敏感去重、`.cac/rules/AGENTS.md` 严禁任何 `---` YAML frontmatter 头、清理虚构 `harness validate` 命令、`manifest.mjs` 根指令禁装保护+`seeded` 双向漂移检查与 `gate.yml` 外部根文件全链路共存断言）。
   - 依据：用户明确纠正跨宿主规则或目录约定严禁凭单一宿主经验类推臆断，必须先调搜索引擎查官方文档并跑真机探针实测；同时三阶段审查发现 2 HIGH / 2 MEDIUM / 1 LOW 共 5 处边界漏洞需代码与静态护栏双重封堵。
   - 适用范围：`.cac/rules/AGENTS.md`、`.cac/feedback/`、`.cac/harness/audit/*`、`.cac/harness/ext/rules*`、`.cac/scripts/doctor.mjs`、`.cac/skills/{skill-builder,feedback-writer}/SKILL.md`、`scripts/lib/manifest.mjs`、`.github/workflows/gate.yml`。
@@ -35,7 +47,7 @@
 
 ## 当前断点
 
-- `cac-base` v1.1.0（主控宪法迁入 `.cac/rules/AGENTS.md` 根目录零文件入侵模式 + 同仓多底座零冲突共存）已完成全链路实现、两轮独立三阶段审查（`0 open findings`）、全量独立回归测试（10 套件 77 用例全绿）与 `pack-check` / `doctor` 体检，就绪提交推送远端仓库。
+- `cac-base` v1.2.0 三阶段审查检出的全部 12 项问题（3 HIGH / 5 MEDIUM / 4 LOW）已完成代码与文档落盘并刷新 194 项受管文件清单，待独立 `cac-tester` 补充回归断言与 `cac-reviewer` 复核验收。
 
 ## TODO
 
@@ -46,6 +58,9 @@
 - [P0][DONE][#5] 生成 `FRAMEWORK-MANIFEST.json`，由独立 `cac-tester` 编写全量 `node:test` 套件（10 套件 68 用例）并全绿
 - [P0][DONE][#6] 由独立 `cac-reviewer` 完成三阶段审查并闭环全部 14 项问题（含新增 7 组防回退回归断言）
 - [P0][DONE][#7] v1.1.0 主控宪法迁入 `.cac/rules/AGENTS.md`（根目录零文件入侵）及全链路护栏/清单/CI 同步
+- [P0][DONE][#8] v1.1.1 修复外层父目录 `.git` 向上逃逸误报与 `SessionStart` 启动快照预注（新空项目开场零工具秒回）
+- [P0][DONE][#9] v1.2.0 全量无损融合 `cc-base` 主控宪法/细则/22 技能原文血肉与新增 12 份参考示例，`doctor.mjs` 升至 7 核心细则并重算 194 受管文件清单
+- [P0][DONE][#10] v1.2.0 闭环三阶段审查全部 12 项问题（3 HIGH / 5 MEDIUM / 4 LOW）并重算 `FRAMEWORK-MANIFEST.json`
 
 ## Done
 
@@ -54,3 +69,6 @@
 - 2026-11-26: 完成 `cac-base` v1.0.0 全仓原生构建（核心治理引擎 + 三哨兵 + 18 Hook + 9 Sub-Agent + 22 Skill + 活文档三件套 + `readable-docs` 47 模块 + 单一 Node 双平台安装器 + 可选大仓包 `ext/`）。
 - 2026-11-26: 完成独立测试与三阶段代码审查闭环（修复并锁死 Windows `npx.cmd` `EINVAL`、Bash/PowerShell 双安全地板闸边界、唯一实例 `agent_id` 作者记账、`stop_hook_active` 防重入等全部 14 项问题，68/68 测试通过，`pack-check` 0 漂移 0 泄漏）。
 - 2026-11-26: 基于内网真机禁工具沙箱实证（`[HIT-4-CAC-RULES]`）与 `--debug-file` 启动扫描实证（`.claude/` 零命中），完成 v1.1.0 主控宪法迁移至 `.cac/rules/AGENTS.md`（无 frontmatter 启动自动注入），实现目标项目根目录零文件入侵与多底座同仓绝缘共存；闭环全部 5 项审查问题，通过 10 套件 77 用例独立回归测试与 `pack-check` 七项门禁。
+- 2026-11-26: 完成 v1.1.1 修复外层父目录 `.git` 越界逃逸与新空项目开场连发工具探测问题（新增 `gitStateOf` 与 `.cac/` 根边界锁死、子目录 `porcelainZ` 限定与前缀剥离、`SessionStart` 毫秒级启动快照预注与未独立 `git init` 提示、`.cac/rules/AGENTS.md` 开场零探测与工作目录硬边界规则）。
+- 2026-11-26: 完成 v1.2.0 `cc-base` 全量原文血肉 1:1 无损融合（无头 `.cac/rules/AGENTS.md` 完整承载 SiteMaster 10 条手搓铁律、22 条 Skill 调用规则、9 角色调度表、开发测试与项目记忆细则、开场零探测硬边界与完整 ASCII 开场白；`doctor.mjs` 补登第 7 份核心细则 `workflow-orchestration`；`FRAMEWORK-MANIFEST.json` 重算为 194 个受管文件、0 seeded 文件）。
+- 2026-11-27: 完成 v1.2.0 三阶段审查全部 12 项问题修复（修正 `feedback-entry-template.md` 路径、清理 `cac-base.mjs package` 并加裸词误输 `exit 2` 守卫、`pre-commit-check` 与 `red-blue-pack` 接入外层父目录 `.git` 阻断与 `--relative -- .` 限定、`core.mjs` 空仓 `EMPTY_TREE_SHA` 暂存可见性、`findCacProjectRoot` 软链 `realpath` 二次查找与 `tmpKey` 排除、Windows `relToProject` 大小写不敏感与 `session-start` 豁免 `trackedSubdir`、`audit/README.md` 去虚构白名单并对齐三哨兵契约、4 处 LOW 细节收口及刷新 `FRAMEWORK-MANIFEST.json`）。

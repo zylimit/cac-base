@@ -67,7 +67,7 @@
 | `.claude/rules/` `paths:` 自动注入 | 带 `paths:` 头不自动注入；无 `paths:` 头的 `.cac/rules/*.md` 启动自动注入 | 主控宪法放无头的 `.cac/rules/AGENTS.md` 启动自动注入；下沉细则带 `paths:` 头并由宪法前置指针显式 `Read` |
 | `Dynamic Workflows` (`code-review-fanout.js`) | CC 专属 | 主 Agent 按维度并行调多次 `Agent(subagent_type: "code-reviewer")` + 主 Agent 汇总裁定（须用户 opt-in） |
 | `UserPromptExpansion` 事件 | 无独立展开事件 | 双重防线：`PreToolUse(Skill)` 匹配 `skill === "release-builder"` + `UserPromptSubmit` 匹配 `/release-builder` |
-| `PostToolUse` `asyncRewake: true` | 无后台唤醒 | 由 `PreToolUse(Bash)` 的 `pre-commit-check` 同步门与 `/gate` 兜底 |
+| `PostToolUse` `asyncRewake: true` | 无后台唤醒 | 由 `PreToolUse(Bash)` 的 `pre-commit-check` 同步门与 `node .cac/harness/harness.mjs gate` 兜底 |
 | `subagent_type: "fork"` | 无会话克隆 | 主 Agent 显式传递本轮决策/反馈结构化摘录与相关文件路径给 `progress-recorder` / `feedback-observer` |
 | Agent `memory: project` | 无自动挂载 | `code-reviewer` / `tester` 启动时显式读写 `.cac/agent-memory/<role>/MEMORY.md`（单文件 ≤5KB、角色总计 ≤50KB，超限搬 `docs/agent-notes/<role>/`） |
 | `statusLine` / `terminalSequence` | 无状态栏配置 | 由 `SessionStart` 横幅 + `node .cac/scripts/project-status.mjs` + `harness tier status` 提供 |

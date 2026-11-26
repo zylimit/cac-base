@@ -1,13 +1,16 @@
 // # risk: high
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  REPO_ROOT,
   HARNESS_DIR,
   HARNESS_ENTRY,
   HOOKS_DIR,
   GITHOOKS_RUN,
+  mkTmpDir,
   mkTmpRepo,
   cleanupTmp,
   writeFiles,
@@ -15,6 +18,8 @@ import {
   runNode,
   runHook,
 } from './helpers.mjs';
+import { findCacProjectRoot as findHookCacRoot, sameDir } from '../hooks/lib/io.mjs';
+import { findCacProjectRoot as findCoreCacRoot } from '../harness/lib/core.mjs';
 
 function setTier(dir, tier, extraArgs = []) {
   const res = runNode(HARNESS_ENTRY, ['tier', 'set', tier, ...extraArgs], { cwd: dir });
@@ -724,5 +729,310 @@ test('[Regression HIGH-4] record-authorship records unique instance agent_id ins
     assert.deepEqual(entry.files, ['src/app.ts']);
   } finally {
     cleanupTmp(dir);
+  }
+});
+
+// ============================================================================
+// 10. [Regression v1.1.1/v1.2.0] Outer parent .git isolation + SessionStart snapshot
+// ============================================================================
+
+test('[Regression v1.1.1] uninitialized child project inside dirty outer parent .git injects startup snapshot + git init boundary hint and never false-alarms or blocks on sibling dirty files', () => {
+  const parent = mkTmpRepo({
+    prefix: 'cac-outer-git-hooks-',
+    withProfile: false,
+    withSettings: false,
+    files: {
+      'other-proj/tracked.ts': 'export const v = 1;\n',
+      '.github/workflows/ci.yml': 'name: outer-ci\n',
+    },
+  });
+  try {
+    // Dirty the outer parent repo (both tracked governance-like workflow and sibling untracked/modified code)
+    writeFiles(parent, {
+      'other-proj/tracked.ts': 'export const v = 2;\n',
+      'other-proj/dirty.ts': 'export const dirty = true;\n',
+      '.github/workflows/ci.yml': 'name: outer-ci-dirty\n',
+    });
+
+    // Install cac-base into parent/cac-dryrun WITHOUT running `git init` inside cac-dryrun
+    const childDir = path.join(parent, 'cac-dryrun');
+    const cacCli = path.join(REPO_ROOT, 'scripts', 'cac-base.mjs');
+    const inst = runNode(cacCli, ['install', '--target', childDir]);
+    assert.equal(inst.status, 0, `install into childDir failed: ${inst.stderr}`);
+    assert.equal(fs.existsSync(path.join(childDir, '.git')), false, 'cac-dryrun must NOT have its own .git');
+
+    const childSessionStart = path.join(childDir, '.cac', 'hooks', 'session-start.mjs');
+    const childSyncGate = path.join(childDir, '.cac', 'hooks', 'three-file-sync-gate.mjs');
+    const childPrecompactGate = path.join(childDir, '.cac', 'hooks', 'precompact-gate.mjs');
+    const childHarness = path.join(childDir, '.cac', 'harness', 'harness.mjs');
+
+    // (a) SessionStart in parent/cac-dryrun with CODEAGENT3_PROJECT_DIR=parent/cac-dryrun
+    const ss = runHook(childSessionStart, {
+      hook_event_name: 'SessionStart',
+      cwd: childDir,
+    }, {
+      cwd: childDir,
+      projectDir: childDir,
+    });
+    assert.equal(ss.status, 0, `session-start failed: ${ss.stderr}`);
+    const ssCtx = ss.json?.hookSpecificOutput?.additionalContext || '';
+    assert.match(ssCtx, /tier:\s*standard（来源 default）/, 'tier must remain standard (default), never raised by parent .git');
+    assert.match(ssCtx, /当前项目启动快照/, 'must inject startup snapshot heading');
+    assert.match(ssCtx, /Product-Spec:\s*未创建/, 'must report Product-Spec: 未创建');
+    assert.match(ssCtx, /Design-Brief:\s*未创建/, 'must report Design-Brief: 未创建');
+    assert.match(ssCtx, /DEV-PLAN:\s*未创建/, 'must report DEV-PLAN: 未创建');
+    assert.match(ssCtx, /progress\.md:\s*未创建/, 'must report progress.md: 未创建');
+    assert.match(ssCtx, /人读文档:\s*未初始化/, 'must report 人读文档: 未初始化');
+    assert.match(ssCtx, /git init/, 'must include uninitialized git init boundary notice');
+    assert.doesNotMatch(ssCtx, /检测到 git 工作树有/, 'must NEVER false-alarm on parent dirty worktree');
+
+    // Also verify env-less invocation (CODEAGENT3_PROJECT_DIR & CAC_PROJECT_DIR unset, no ev.cwd) locks onto childDir/.cac
+    const ssNoEnv = runHook(childSessionStart, { hook_event_name: 'SessionStart' }, {
+      cwd: childDir,
+      projectDir: null,
+    });
+    assert.equal(ssNoEnv.status, 0);
+    const ssNoEnvCtx = ssNoEnv.json?.hookSpecificOutput?.additionalContext || '';
+    assert.match(ssNoEnvCtx, /当前项目启动快照/);
+    assert.match(ssNoEnvCtx, /git init/);
+    assert.doesNotMatch(ssNoEnvCtx, /检测到 git 工作树有/);
+
+    // (c) three-file-sync-gate & precompact-gate in parent/cac-dryrun (even with progress.md + strict tier + local file)
+    writeFiles(childDir, {
+      'progress.md': '# Progress\n\n## Pinned\n- Isolated child project\n',
+    });
+
+    const syncStd = runHook(childSyncGate, {
+      hook_event_name: 'Stop',
+      cwd: childDir,
+      stop_hook_active: false,
+    }, { cwd: childDir, projectDir: childDir });
+    assert.equal(syncStd.status, 0);
+    assert.notEqual(syncStd.json?.decision, 'block');
+    assert.equal(syncStd.stdout.trim(), '', 'three-file-sync-gate must emit neither block nor advise for parent dirty files');
+
+    const preStd = runHook(childPrecompactGate, {
+      hook_event_name: 'PreCompact',
+      cwd: childDir,
+    }, { cwd: childDir, projectDir: childDir });
+    assert.equal(preStd.status, 0);
+    assert.notEqual(preStd.json?.decision, 'block');
+    assert.equal(preStd.stdout.trim(), '', 'precompact-gate must emit neither block nor warning for parent dirty files');
+
+    // Even under explicit strict tier with local uninitialized files, outer parent .git must never trigger gates
+    const strictSet = runNode(childHarness, ['tier', 'set', 'strict'], { cwd: childDir, projectDir: childDir });
+    assert.equal(strictSet.status, 0);
+    writeFiles(childDir, { 'src/local.ts': 'export const ok = 1;\n' });
+
+    const syncStrict = runHook(childSyncGate, {
+      hook_event_name: 'Stop',
+      cwd: childDir,
+      stop_hook_active: false,
+    }, { cwd: childDir, projectDir: childDir });
+    assert.equal(syncStrict.status, 0);
+    assert.equal(syncStrict.stdout.trim(), '', 'strict three-file-sync-gate must stay silent before child runs git init');
+
+    const preStrict = runHook(childPrecompactGate, {
+      hook_event_name: 'PreCompact',
+      cwd: childDir,
+    }, { cwd: childDir, projectDir: childDir });
+    assert.equal(preStrict.status, 0);
+    assert.equal(preStrict.stdout.trim(), '', 'strict precompact-gate must stay silent before child runs git init');
+
+    // Contrast: once childDir initializes its own git repo and modifies a local file, snapshot & dirty count reflect ONLY childDir
+    runNode(childHarness, ['tier', 'set', 'standard'], { cwd: childDir, projectDir: childDir });
+    writeFiles(childDir, {
+      'Product-Spec.md': '# Child Product Spec\n',
+      'docs/readable/index.html': '<!doctype html><title>Docs</title>\n',
+      'node_modules/pkg/index.js': 'module.exports = 1;\n',
+    });
+    gitIn(childDir, ['init', '-b', 'main']);
+    if (!fs.existsSync(path.join(childDir, '.git'))) {
+      gitIn(childDir, ['init']);
+    }
+    gitIn(childDir, ['config', 'user.email', 'tester@cac-base.local']);
+    gitIn(childDir, ['config', 'user.name', 'CacTester']);
+    gitIn(childDir, ['config', 'commit.gpgsign', 'false']);
+    writeFiles(childDir, { '.gitignore': 'node_modules/\n' });
+    gitIn(childDir, ['add', '-A']);
+    gitIn(childDir, ['commit', '-m', 'feat(init): initialize standalone child repository']);
+
+    // Modify exactly 1 file inside childDir while parent still has 3 dirty files
+    writeFiles(childDir, { 'src/local.ts': 'export const ok = 2;\n' });
+
+    const ssOwnGit = runHook(childSessionStart, {
+      hook_event_name: 'SessionStart',
+      cwd: childDir,
+    }, { cwd: childDir, projectDir: childDir });
+    assert.equal(ssOwnGit.status, 0);
+    const ownCtx = ssOwnGit.json?.hookSpecificOutput?.additionalContext || '';
+    assert.match(ownCtx, /Product-Spec:\s*已存在/);
+    assert.match(ownCtx, /progress\.md:\s*已存在/);
+    assert.match(ownCtx, /人读文档:\s*已生成/);
+    assert.match(ownCtx, /src\//);
+    assert.doesNotMatch(ownCtx, /node_modules/);
+    assert.doesNotMatch(ownCtx, /尚未独立执行 git init/);
+    assert.match(ownCtx, /检测到 git 工作树有 1 处未提交改动/, 'ownRepo dirty count must reflect only childDir (1 file), never parent');
+  } finally {
+    cleanupTmp(parent);
+  }
+});
+
+// ============================================================================
+// 11. [Regression HIGH-3 & MEDIUM-2] pre-commit-check boundary/monorepo + symlink realpath root
+// ============================================================================
+
+test('[Regression HIGH-3] pre-commit-check blocks uninitialized child project from committing to outer parent .git (exit 2) and passes tracked monorepo subpackage with --relative path', () => {
+  const parent = mkTmpRepo({
+    prefix: 'cac-high3-precommit-',
+    withProfile: false,
+    withSettings: false,
+    files: {
+      'packages/app/package.json': JSON.stringify({ name: '@mono/app', version: '1.0.0' }, null, 2) + '\n',
+      'outer-staged.mjs': 'export const outer = 1;\n',
+    },
+  });
+  try {
+    const cacCli = path.join(REPO_ROOT, 'scripts', 'cac-base.mjs');
+
+    // Stage an outer file in parent so an unguarded `git commit` from child would otherwise leak into parent .git
+    writeFiles(parent, { 'outer-staged.mjs': 'export const outer = 2;\n' });
+    gitIn(parent, ['add', 'outer-staged.mjs']);
+
+    // Scenario A: parent has .git, child `parent/cac-dryrun` is NOT `git init`-ed and NOT tracked by parent repo
+    const childDir = path.join(parent, 'cac-dryrun');
+    const instChild = runNode(cacCli, ['install', '--target', childDir]);
+    assert.equal(instChild.status, 0, `install into childDir failed: ${instChild.stderr}`);
+    assert.equal(fs.existsSync(path.join(childDir, '.git')), false);
+
+    const childPreCommit = path.join(childDir, '.cac', 'hooks', 'pre-commit-check.mjs');
+    const blockedBoundary = runHook(childPreCommit, {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      cwd: childDir,
+      tool_input: { command: 'git commit -m test' },
+    }, { cwd: childDir, projectDir: childDir });
+    assert.equal(
+      blockedBoundary.status,
+      2,
+      `Expected exit 2 blocking boundary escape to parent .git in standard tier, got ${blockedBoundary.status}: ${blockedBoundary.stdout} ${blockedBoundary.stderr}`,
+    );
+    assert.match(blockedBoundary.stdout + blockedBoundary.stderr, /git init/);
+
+    // Scenario B: legitimate tracked monorepo subpackage `parent/packages/app` with staged `parent/packages/app/src/ok.mjs`
+    const appDir = path.join(parent, 'packages', 'app');
+    const instApp = runNode(cacCli, ['install', '--target', appDir]);
+    assert.equal(instApp.status, 0, `install into monorepo subpackage failed: ${instApp.stderr}`);
+
+    writeFiles(appDir, { 'src/ok.mjs': 'export const greet = () => "ok";\n' });
+    const addOk = gitIn(appDir, ['add', 'src/ok.mjs']);
+    assert.equal(addOk.status, 0, `git add src/ok.mjs failed: ${addOk.stderr}`);
+
+    const appPreCommit = path.join(appDir, '.cac', 'hooks', 'pre-commit-check.mjs');
+    const monoPass = runHook(appPreCommit, {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      cwd: appDir,
+      tool_input: { command: 'git commit -m "feat(app): add ok module"' },
+    }, { cwd: appDir, projectDir: appDir });
+    assert.equal(
+      monoPass.status,
+      0,
+      `Expected exit 0 for valid staged JS in tracked monorepo subpackage (no doubled packages/app/packages/app path), got ${monoPass.status}: ${monoPass.stdout} ${monoPass.stderr}`,
+    );
+    assert.doesNotMatch(monoPass.stdout + monoPass.stderr, /packages\/app\/packages\/app/);
+
+    // Counter-check (never fake green): broken JS inside the same monorepo subpackage MUST still be caught (exit 2)
+    writeFiles(appDir, { 'src/broken.mjs': 'export function bad( {\n' });
+    gitIn(appDir, ['add', 'src/broken.mjs']);
+    const monoBroken = runHook(appPreCommit, {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      cwd: appDir,
+      tool_input: { command: 'git commit -m "feat(app): broken syntax"' },
+    }, { cwd: appDir, projectDir: appDir });
+    assert.equal(monoBroken.status, 2, 'Broken staged JS in tracked monorepo subpackage must be blocked with exit 2');
+  } finally {
+    cleanupTmp(parent);
+  }
+});
+
+test('[Regression MEDIUM-2] findCacProjectRoot and projectDir() resolve symlinked subdirectory via realpath to hit real-proj/.cac instead of escaping to outer .git', () => {
+  const outerGit = mkTmpRepo({
+    prefix: 'cac-med2-outer-',
+    withProfile: false,
+    withSettings: false,
+    files: {
+      'outer-only.txt': 'outer\n',
+    },
+  });
+  const linkContainer = mkTmpDir('cac-med2-symlink-');
+  try {
+    const cacCli = path.join(REPO_ROOT, 'scripts', 'cac-base.mjs');
+    const realProj = path.join(outerGit, 'real-proj');
+    const inst = runNode(cacCli, ['install', '--target', realProj]);
+    assert.equal(inst.status, 0, `install into real-proj failed: ${inst.stderr}`);
+
+    writeFiles(realProj, {
+      'Product-Spec.md': '# Real Project Spec\n',
+      'src/entry.mjs': 'export const entry = true;\n',
+    });
+    assert.equal(fs.existsSync(path.join(outerGit, 'Product-Spec.md')), false);
+    assert.equal(fs.existsSync(path.join(realProj, '.git')), false);
+
+    // Create symlink `symlink-src -> real-proj/src` inside isolated os.tmpdir() subdirectory
+    const symlinkSrc = path.join(linkContainer, 'symlink-src');
+    const targetSrc = path.join(realProj, 'src');
+    try {
+      fs.symlinkSync(targetSrc, symlinkSrc, 'dir');
+    } catch (err) {
+      if (process.platform === 'win32' && err && (err.code === 'EPERM' || err.code === 'EACCES')) {
+        fs.symlinkSync(targetSrc, symlinkSrc, 'junction');
+      } else {
+        throw err;
+      }
+    }
+
+    // 1. Direct lexical-symlink resolution in both hooks/lib/io.mjs and harness/lib/core.mjs
+    const hookHit = findHookCacRoot(symlinkSrc, outerGit);
+    assert.ok(hookHit, 'io.findCacProjectRoot must resolve symlink-src via realpath');
+    assert.equal(sameDir(hookHit, realProj), true, `io.findCacProjectRoot expected real-proj (${realProj}), got ${hookHit}`);
+    assert.equal(sameDir(hookHit, outerGit), false, 'io.findCacProjectRoot must not escape to outer .git');
+
+    const coreHit = findCoreCacRoot(symlinkSrc, outerGit);
+    assert.ok(coreHit, 'core.findCacProjectRoot must resolve symlink-src via realpath');
+    assert.equal(sameDir(coreHit, realProj), true, `core.findCacProjectRoot expected real-proj (${realProj}), got ${coreHit}`);
+    assert.equal(sameDir(coreHit, outerGit), false, 'core.findCacProjectRoot must not escape to outer .git');
+
+    // 2. Subprocess projectDir() with cwd=symlink-src and zero CODEAGENT3_PROJECT_DIR / CAC_PROJECT_DIR env vars
+    const ioFileUrl = pathToFileURL(path.join(realProj, '.cac', 'hooks', 'lib', 'io.mjs')).href;
+    const probeScript = path.join(linkContainer, 'probe-project-dir.mjs');
+    fs.writeFileSync(
+      probeScript,
+      `import { projectDir } from ${JSON.stringify(ioFileUrl)};\nprocess.stdout.write(JSON.stringify({ root: projectDir() }) + "\\n");\n`,
+      'utf8',
+    );
+    const probeRes = runNode(probeScript, [], { cwd: symlinkSrc, projectDir: null });
+    assert.equal(probeRes.status, 0, `projectDir() subprocess probe failed: ${probeRes.stderr}`);
+    assert.equal(
+      sameDir(probeRes.json?.root, realProj),
+      true,
+      `projectDir() from cwd=symlink-src must hit real-proj (${realProj}), got ${probeRes.json?.root}`,
+    );
+    assert.equal(sameDir(probeRes.json?.root, outerGit), false, 'projectDir() must never escape to outer .git parent');
+
+    // 3. End-to-end session-start.mjs from cwd=symlink-src without env vars or ev.cwd
+    const ssRes = runHook(
+      path.join(realProj, '.cac', 'hooks', 'session-start.mjs'),
+      { hook_event_name: 'SessionStart' },
+      { cwd: symlinkSrc, projectDir: null },
+    );
+    assert.equal(ssRes.status, 0, `session-start from symlink-src failed: ${ssRes.stderr}`);
+    const ssCtx = ssRes.json?.hookSpecificOutput?.additionalContext || '';
+    assert.match(ssCtx, /Product-Spec:\s*已存在/, 'session-start must inspect real-proj rather than outer .git');
+    assert.match(ssCtx, /git init/, 'session-start must report uninitialized real-proj git boundary');
+  } finally {
+    cleanupTmp(linkContainer);
+    cleanupTmp(outerGit);
   }
 });

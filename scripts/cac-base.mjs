@@ -33,6 +33,26 @@ const KNOWN_COMMANDS = new Set([
   'help',
 ]);
 
+// Bare lowercase English subcommand typos (no '/', '\', '.', ':') that must fail fast with exit 2
+// instead of silently creating a local directory of that name as an install target.
+const COMMON_TYPO_SUBCOMMANDS = new Map([
+  ['package', 'did you mean "release <version>" or "pack-check"?'],
+  ['pack', 'did you mean "release <version>" or "pack-check"?'],
+  ['bundle', 'did you mean "release <version>"?'],
+  ['check', 'did you mean "pack-check" or "manifest --check"?'],
+  ['verify', 'did you mean "pack-check" or "doctor"?'],
+  ['test', 'did you mean "pack-check"?'],
+  ['tests', 'did you mean "pack-check"?'],
+  ['lint', 'did you mean "pack-check"?'],
+  ['audit', 'did you mean "pack-check"?'],
+  ['status', 'did you mean "doctor"?'],
+  ['init', 'did you mean "install"?'],
+  ['update', 'did you mean "upgrade"?'],
+  ['remove', 'did you mean "uninstall"?'],
+  ['clean', 'did you mean "uninstall"?'],
+  ['version', 'did you mean "--help"?'],
+]);
+
 const KNOWN_BOOLEAN_FLAGS = new Set([
   'dry-run',
   'with-tests',
@@ -130,6 +150,16 @@ export function parseCliArgs(argv) {
   const restPos = [...positional];
   if (restPos.length > 0 && KNOWN_COMMANDS.has(restPos[0])) {
     cmd = restPos.shift();
+  } else if (
+    restPos.length > 0 &&
+    /^[a-z]+$/.test(restPos[0]) &&
+    COMMON_TYPO_SUBCOMMANDS.has(restPos[0])
+  ) {
+    const badCmd = restPos[0];
+    const hint = COMMON_TYPO_SUBCOMMANDS.get(badCmd);
+    usageDie(
+      `unknown subcommand "${badCmd}" (${hint} To install into a folder named "${badCmd}", pass --target ./${badCmd})`,
+    );
   }
   if (flags.has('uninstall')) {
     if (cmd !== 'install' && cmd !== 'uninstall') {

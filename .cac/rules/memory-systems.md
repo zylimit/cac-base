@@ -4,22 +4,13 @@ paths:
   - ".cac/agent-memory/**"
 ---
 
-# 多套记忆系统边界规范（memory-systems）
+本文件由 `.cac/rules/AGENTS.md` 下沉；主控命中指针时必须完整读取本文件再行动，不得凭指针行猜测内容。（frontmatter 的 `paths` 声明本细则作用域并避免 `codeagent` 会话启动时全量自动灌入浪费上下文；碰 `.cac/feedback/` 或 `.cac/agent-memory/` 下文件、或判断某条该记哪儿时，按 `.cac/rules/AGENTS.md` 前置指针显式 `Read` 本文件。）
 
-> 本文件由 `.cac/rules/AGENTS.md` 下沉；写 feedback、维护 `progress.md`、动 `.cac/agent-memory/` 或判断知识归属前必须完整 `Read` 本文件。
-
-## 五类记忆各司其职（严禁混装）
-
-| 记忆载体 | 存什么 | 跟谁走 | 谁维护 | 硬边界 |
-|---|---|---|---|---|
-| **`progress.md`** | 项目决策（Decisions 三要素）、硬约束（Pinned ≤15 条）、当前断点（仅留 1 条）、TODO、近期完成（Done） | 跟当前仓库走 | `progress-recorder`（归档由 `progress-archive.mjs` 跑） | 决策/约束/完成**只认 `progress.md`**，不因任何其他 memory 豁免三文件同步 |
-| **`.cac/feedback/`** | 用户对 **AI 工作方法** 的纠正、偏好与流程教训（含 `scope / exceptions / supersedes / applied_to`） | 跟 AI 框架进化走 | `feedback-observer` 写入，`evolution-runner` 聚类毕业 | 每条必有合规 frontmatter 并登记 `.cac/feedback/FEEDBACK-INDEX.md` |
-| **`domain/`** | **这个业务领域里事情是怎么算的**（跨仓库仍成立的客观口径，七栏结构） | 跟业务领域走 | 主 Agent 裁定后派 `domain-recorder` | 无三类硬依据（实测/外网标准/内部规范）拒收；不存项目临时范围限制 |
-| **`docs/design/`** | 本仓库复杂模块如何把规则落成代码、常量与测试（`<模块名>-设计.md`） | 跟本仓库模块走 | 主 Agent / `implementer`，`design-trace.mjs` 核对 | 代码改则设计详述必同步（`design-detail-sync` 守护） |
-| **`.cac/agent-memory/<role>/MEMORY.md`** | `code-reviewer` / `tester` 的项目战术笔记（本项目高发缺陷模式、flaky 区、测试夹具坑） | 跟本机/项目角色走 | 角色启动时显式 `Read`、收工时精炼更新 | **单文件封顶 5KB，每角色总计封顶 50KB**；超限即搬入 `docs/agent-notes/<role>/` 并在 `MEMORY.md` 留一行指针 |
-
-## 用户纠正的分流判据
-
-1. **当前项目业务事实/取舍**（「这个接口用 IP 不用名称」）→ 当场改当前产物 + 进 `progress.md` Decisions（若属跨项目通用领域算法，再判是否收进 `domain/`）。
-2. **AI 工作方式/沟通/验证纪律**（「以后发版前先自查四项再让我敲命令」）→ 当场改当前做法 + 派 `feedback-observer` 记入 `.cac/feedback/`（用户明说「以后都这样」时顺手更新对应 rule/skill）+ 回显「这次纠正改了 X 文件 Y 段」。
-3. **宿主原生本地 auto-memory**（如 `~/.cac/` 下自动记忆）：只许存机器本地琐碎线索，绝不能替代 `progress.md` 或 `.cac/feedback/`。
+[三套系统的边界（feedback / 用户 memory / agent memory）]
+    - feedback 记录到 .cac/feedback/ 目录，由 evolution-engine 扫描并生成进化建议，用于改进 Skill 和规则
+    - memory 记录到用户的 memory/ 目录，用于跨 session 记住用户偏好和项目上下文
+    - 用户修正 AI 行为时，必须走 feedback 流程（派发 feedback-observer），不能只写 memory；纠正分两类落地——**业务规则**（这个项目里的事实、取舍、既定）进 progress.md Decisions / Pinned 三要素，下一角色靠派单包 Business Context 拿到；**工作方法**（AI 该怎么问、怎么做）进 feedback，feedback 的 applied_to 记它落到了哪里，pending 表示还没生效
+    - 一条 feedback 的 scope / exceptions / supersedes 是它能不能被正确使用的前提：没有范围的规则会被用到不该用的地方，没有取代关系的新规则会和旧规则并存打架
+    - **agent memory（第三类，别和前两者混）**：`codeagent` 无 `memory: project` 自动挂载，改为 `code-reviewer` / `tester` 启动时显式 `Read`、收工前按需更新 `.cac/agent-memory/<角色>/MEMORY.md` 持久战术记忆——存的是角色自己的战术笔记（本项目高发缺陷模式 / flaky 区），由角色自维护、无人工审核，不承载框架规则（那是 feedback 的事），也不承载项目事实。**单文件封顶 5KB、每角色合计封顶 50KB**：超了就是文档不是记忆，搬到 `docs/agent-notes/<角色>/` 并在该角色 `MEMORY.md` 里留相对路径指针（2026-09-15 首批搬了六份，最大的一份 43KB）。fresh 实例一旦每次读取过厚的 `MEMORY.md` 与它点开的文件，「fresh」就变假，也会把「每单 ≤ 6 次工具调用」直接撑爆。
+    - **宿主本地偏好记忆的边界**：用户级本地目录（如 `~/.cac/` 或宿主本地环境偏好）只许存机器本地琐碎（构建命令、调试线索）；**决策 / 约束 / 完成事项只认 `progress.md`**——三文件同步铁律不因任何本地 memory 存了什么而豁免，恢复上下文以 `/recap-project` 三份文件为准、不以本地 memory 为准。
+    - **领域口径（跟领域走，不跟项目走也不跟 AI 走）**：「这个域里事情怎么算」进项目根 domain/——不进 feedback（那是 AI 工作方法）、不进 progress.md（那是项目决策）、不进 agent memory（那是角色战术笔记）。判法是问「这条当初是谁知道的」：双方都不知、要共同查证才得出的才是口径，细则见 .cac/rules/domain-rulings.md。

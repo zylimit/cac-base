@@ -2,6 +2,7 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -100,8 +101,107 @@ function git(args, opts = {}) {
   });
 }
 
+function normDirKey(p) {
+  if (!p) return '';
+  let abs = path.resolve(String(p));
+  try {
+    abs = fs.realpathSync.native ? fs.realpathSync.native(abs) : fs.realpathSync(abs);
+  } catch (_e) {
+    try { abs = fs.realpathSync(abs); } catch (_e2) { /* keep abs */ }
+  }
+  const posix = toPosixPath(abs).replace(/\/+$/, '') || '/';
+  return process.platform === 'win32' ? posix.toLowerCase() : posix;
+}
+
+function sameDir(a, b) {
+  if (!a || !b) return false;
+  return normDirKey(a) === normDirKey(b);
+}
+
+function isSameOrSubPath(child, base) {
+  const c = normDirKey(child);
+  const b = normDirKey(base);
+  if (!c || !b) return false;
+  if (c === b) return true;
+  return b === '/' ? c.startsWith('/') : c.startsWith(b + '/');
+}
+
+function resolveRealPathBestEffort(p) {
+  const abs = path.resolve(String(p));
+  let cur = abs;
+  const tail = [];
+  for (;;) {
+    try {
+      const real = fs.realpathSync.native ? fs.realpathSync.native(cur) : fs.realpathSync(cur);
+      return tail.length ? path.join(real, ...tail) : real;
+    } catch (_e) {
+      try {
+        const realFallback = fs.realpathSync(cur);
+        return tail.length ? path.join(realFallback, ...tail) : realFallback;
+      } catch (_e2) {
+        const parent = path.dirname(cur);
+        if (parent === cur) return abs;
+        tail.unshift(path.basename(cur));
+        cur = parent;
+      }
+    }
+  }
+}
+
+function findCacProjectRoot(startDir, stopAt = null) {
+  if (!startDir) return null;
+  const resolvedStart = path.resolve(String(startDir));
+  const stopKey = stopAt ? normDirKey(resolveRealPathBestEffort(stopAt)) : '';
+  const homeKey = normDirKey(os.homedir());
+  const tmpKey = normDirKey(os.tmpdir());
+
+  const walkUp = (fromAbs, preserveRawStart) => {
+    let cur = fromAbs;
+    for (;;) {
+      const curKey = normDirKey(cur);
+      if (curKey === homeKey || curKey === tmpKey) break;
+      if (fs.existsSync(path.join(cur, '.cac'))) {
+        const isProjectCac = curKey !== homeKey && curKey !== tmpKey;
+        if (isProjectCac) {
+          return preserveRawStart && cur === fromAbs && fs.existsSync(path.join(String(startDir), '.cac'))
+            ? String(startDir)
+            : cur;
+        }
+      }
+      if (stopKey && curKey === stopKey) break;
+      const parent = path.dirname(cur);
+      if (parent === cur) break;
+      cur = parent;
+    }
+    return null;
+  };
+
+  const direct = walkUp(resolvedStart, true);
+  if (direct) return direct;
+
+  const realStart = resolveRealPathBestEffort(resolvedStart);
+  const lexA = toPosixPath(resolvedStart).replace(/\/+$/, '') || '/';
+  const lexB = toPosixPath(realStart).replace(/\/+$/, '') || '/';
+  const sameSpelling = process.platform === 'win32'
+    ? lexA.toLowerCase() === lexB.toLowerCase()
+    : lexA === lexB;
+  if (!sameSpelling) {
+    return walkUp(realStart, false);
+  }
+  return null;
+}
+
 function isGitRepo(cwd = projectRoot()) {
-  return git(['rev-parse', '--is-inside-work-tree'], { cwd }).status === 0;
+  const rev = git(['-c', 'core.quotePath=false', 'rev-parse', '--show-toplevel'], { cwd });
+  if (rev.status !== 0 || !rev.stdout) return false;
+  const topLevel = rev.stdout.toString('utf8').trim();
+  if (!topLevel) return false;
+  if (sameDir(topLevel, cwd) || fs.existsSync(path.join(cwd, '.git'))) return true;
+  // 若当前目录已有 .cac 但未独立 git init（躺在某个外层父目录 .git 下），仅当其已被外层仓库索引追踪时才视为有效 Git 子目录
+  if (fs.existsSync(path.join(cwd, '.cac'))) {
+    return git(['ls-files', '--error-unmatch', '.'], { cwd }).status === 0;
+  }
+  return true;
 }
 
 function headCommit(cwd = projectRoot()) {
@@ -173,11 +273,13 @@ function splitNul(buf) {
   return buf.toString('utf8').split('\0').map((s) => toPosixPath(s.trim())).filter(Boolean);
 }
 
-function changedPaths() {
-  const cwd = projectRoot();
+const EMPTY_TREE_SHA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+
+function changedPaths(cwd = projectRoot()) {
   if (!isGitRepo(cwd)) return { paths: [], nonGit: true };
-  const tracked = splitNul(git(['-c', 'core.quotePath=false', 'diff', '--name-only', '-z', 'HEAD'], { cwd }).stdout);
-  const untracked = splitNul(git(['-c', 'core.quotePath=false', 'ls-files', '-z', '--others', '--exclude-standard'], { cwd }).stdout);
+  const baseRef = headCommit(cwd) ? 'HEAD' : EMPTY_TREE_SHA;
+  const tracked = splitNul(git(['-c', 'core.quotePath=false', 'diff', '--name-only', '-z', '--relative', baseRef, '--', '.'], { cwd }).stdout);
+  const untracked = splitNul(git(['-c', 'core.quotePath=false', 'ls-files', '-z', '--others', '--exclude-standard', '--', '.'], { cwd }).stdout);
   const seen = new Set();
   const out = [];
   for (const p of tracked.concat(untracked)) {
@@ -190,7 +292,7 @@ function changedPaths() {
 }
 
 function hashUntracked(cwd = projectRoot()) {
-  const list = splitNul(git(['-c', 'core.quotePath=false', 'ls-files', '-z', '--others', '--exclude-standard'], { cwd }).stdout)
+  const list = splitNul(git(['-c', 'core.quotePath=false', 'ls-files', '-z', '--others', '--exclude-standard', '--', '.'], { cwd }).stdout)
     .filter((p) => !isStateExcluded(p))
     .sort();
   const parts = [];
@@ -202,16 +304,16 @@ function hashUntracked(cwd = projectRoot()) {
   return Buffer.concat(parts);
 }
 
-function canonicalDiff() {
-  const cwd = projectRoot();
+function canonicalDiff(cwd = projectRoot()) {
   if (!isGitRepo(cwd)) return { buf: Buffer.from('NON_GIT'), nonGit: true };
-  const tracked = git(['diff', '--binary', '--no-ext-diff', 'HEAD', '--', ...STATE_EXCLUDE], { cwd }).stdout || Buffer.alloc(0);
+  const baseRef = headCommit(cwd) ? 'HEAD' : EMPTY_TREE_SHA;
+  const tracked = git(['diff', '--binary', '--no-ext-diff', '--relative', baseRef, '--', '.', ...STATE_EXCLUDE], { cwd }).stdout || Buffer.alloc(0);
   const untracked = hashUntracked(cwd);
   return { buf: Buffer.concat([tracked, untracked]), nonGit: false };
 }
 
-function gitFingerprint() {
-  return sha256(canonicalDiff().buf);
+function gitFingerprint(cwd = projectRoot()) {
+  return sha256(canonicalDiff(cwd).buf);
 }
 
 // ===========================================================================
@@ -264,11 +366,21 @@ const DEFAULTS = {
 function projectRoot() {
   const envDir = process.env.CODEAGENT3_PROJECT_DIR || process.env.CAC_PROJECT_DIR;
   if (envDir && envDir.trim()) return envDir.trim();
-  const top = git(['rev-parse', '--show-toplevel']);
-  if (top.status === 0 && top.stdout && top.stdout.toString('utf8').trim()) {
-    return top.stdout.toString('utf8').trim();
+  const cwd = process.cwd();
+  const directCac = findCacProjectRoot(cwd, cwd);
+  if (directCac) return directCac;
+  const top = git(['-c', 'core.quotePath=false', 'rev-parse', '--show-toplevel'], { cwd });
+  const topDir = (top.status === 0 && top.stdout && top.stdout.toString('utf8').trim())
+    ? top.stdout.toString('utf8').trim()
+    : null;
+  const cacFromCwd = findCacProjectRoot(cwd, topDir);
+  if (cacFromCwd) return cacFromCwd;
+  const inferredRoot = path.dirname(path.dirname(HARNESS_DIR));
+  if (path.basename(path.dirname(HARNESS_DIR)) === '.cac' && isSameOrSubPath(cwd, inferredRoot)) {
+    return inferredRoot;
   }
-  return process.cwd();
+  if (topDir) return topDir;
+  return cwd;
 }
 
 function catalogFilePath() {
@@ -432,9 +544,9 @@ function whichCmd(exe) {
 }
 
 export {
-  HARNESS_DIR,
+  HARNESS_DIR, EMPTY_TREE_SHA,
   readStdin, toPosixPath, stableJson, sha256, sha256Lf, emit, die, sleepSync, withDirLock,
-  git, isGitRepo, headCommit, isStateExcluded, splitNul, changedPaths, canonicalDiff, gitFingerprint,
+  git, sameDir, findCacProjectRoot, isGitRepo, headCommit, isStateExcluded, splitNul, changedPaths, canonicalDiff, gitFingerprint,
   globToRegExp, matchAny, specificity,
   DEFAULTS, projectRoot, catalogFilePath, repoRelative, loadHarnessConfig,
   readTextFile, readDirNames, errDetail, quarantineFilePath, recordCorruptState,
