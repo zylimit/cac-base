@@ -5,7 +5,7 @@ paths:
 
 # 质量属性分档与证据门禁规范（quality-attributes）
 
-> 本文件由 `AGENTS.md` 下沉，随 `--with-harness`（Windows `-WithHarness`）装入 `.cac/rules/quality-attributes.md`；主控声明模块 `attributes`、配置 `checks`、`waiver` 或解读 `verify`/`gate`/`fitness` 时必须先完整 `Read` 本文件。
+> 本文件由 `.cac/rules/AGENTS.md` 下沉，随 `--with-harness`（Windows `-WithHarness`）装入 `.cac/rules/quality-attributes.md`；主控声明模块 `attributes`、配置 `checks`、`waiver` 或解读 `verify`/`gate`/`fitness` 时必须先完整 `Read` 本文件。
 
 ## 1. 八项质量属性与受保护铁律
 

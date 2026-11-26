@@ -9,8 +9,8 @@ import { projectDir, readStdinRaw, pendingReviewFiles, emit } from './lib/io.mjs
 import { harnessEntry, harnessRun, rcInContract } from './lib/harness.mjs';
 
 const DEGRADE = {
-  'no-harness': 'PostCompact: .cac/harness/harness.mjs 缺失，压缩后未能自动回注不变量——继续操作前请先显式 Read AGENTS.md 与 progress.md。',
-  engine: 'PostCompact: 治理引擎派生 invariants 异常，压缩后未能自动回注不变量——继续操作前请先显式 Read AGENTS.md 与 progress.md。',
+  'no-harness': 'PostCompact: .cac/harness/harness.mjs 缺失，压缩后未能自动回注不变量——继续操作前请先显式 Read .cac/rules/AGENTS.md 与 progress.md。',
+  engine: 'PostCompact: 治理引擎派生 invariants 异常，压缩后未能自动回注不变量——继续操作前请先显式 Read .cac/rules/AGENTS.md 与 progress.md。',
 };
 
 function degrade(kind) {

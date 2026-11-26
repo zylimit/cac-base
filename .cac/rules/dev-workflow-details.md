@@ -10,7 +10,7 @@ paths:
 
 # 开发全流程细则（dev-workflow-details）
 
-> 本文件由 `AGENTS.md` 下沉；进入任一开发阶段前必须完整 `Read` 本文件。
+> 本文件由 `.cac/rules/AGENTS.md` 下沉；进入任一开发阶段前必须完整 `Read` 本文件。
 
 ## 1. 阶段推进与签字闸
 

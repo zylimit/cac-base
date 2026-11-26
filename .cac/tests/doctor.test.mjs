@@ -2,6 +2,7 @@
 import { after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -158,5 +159,168 @@ describe('doctor.mjs integrity & health check contract', () => {
     assert.equal(parsed.ok, false);
     assert.ok(parsed.detail.errors.length >= 1);
     assert.match(parsed.detail.errors[0], /install\.marker.*interrupted/);
+  });
+
+  test('missing or empty .cac/rules/AGENTS.md fails doctor.mjs (exit non-zero) even when an external root AGENTS.md exists', () => {
+    const target = installTarget('missing-hidden-agents');
+    const targetDoctor = path.join(target, '.cac', 'scripts', 'doctor.mjs');
+    const hiddenAgents = path.join(target, '.cac', 'rules', 'AGENTS.md');
+
+    // Place an external root AGENTS.md to ensure root AGENTS.md cannot mask missing .cac/rules/AGENTS.md
+    fs.writeFileSync(path.join(target, 'AGENTS.md'), '# External Tool Root AGENTS.md\n', 'utf8');
+
+    // Case A: deleted .cac/rules/AGENTS.md -> exit non-zero
+    fs.rmSync(hiddenAgents, { force: true });
+    const rMissing = runNode(targetDoctor, [target, '--json']);
+    assert.notEqual(rMissing.status, 0, 'missing .cac/rules/AGENTS.md must exit non-zero');
+    const missingJson = JSON.parse(rMissing.stdout.trim());
+    assert.equal(missingJson.ok, false);
+    assert.ok(
+      missingJson.detail.errors.some((e) => e.includes('.cac/rules/AGENTS.md') && (e.includes('缺失') || e.includes('空'))),
+      `expected missing .cac/rules/AGENTS.md error, got: ${JSON.stringify(missingJson.detail.errors)}`,
+    );
+
+    // Case B: empty (0-byte) .cac/rules/AGENTS.md -> exit non-zero
+    fs.writeFileSync(hiddenAgents, '', 'utf8');
+    const rEmpty = runNode(targetDoctor, [target, '--json']);
+    assert.notEqual(rEmpty.status, 0, 'empty .cac/rules/AGENTS.md must exit non-zero');
+    const emptyJson = JSON.parse(rEmpty.stdout.trim());
+    assert.equal(emptyJson.ok, false);
+    assert.ok(
+      emptyJson.detail.errors.some((e) => e.includes('.cac/rules/AGENTS.md') && (e.includes('缺失') || e.includes('空'))),
+      `expected empty .cac/rules/AGENTS.md error, got: ${JSON.stringify(emptyJson.detail.errors)}`,
+    );
+  });
+
+  test('[Red-lock HOST-CONTRACT §2] .cac/rules/AGENTS.md with paths: YAML frontmatter (LF & \\r\\n CRLF) fails doctor.mjs with exit 1 even when manifest SHA256 matches', () => {
+    const target = installTarget('agents-paths-guard');
+    const targetDoctor = path.join(target, '.cac', 'scripts', 'doctor.mjs');
+    const hiddenAgents = path.join(target, '.cac', 'rules', 'AGENTS.md');
+    const manifestPath = path.join(target, '.cac', 'FRAMEWORK-MANIFEST.json');
+    const cleanBody = fs.readFileSync(hiddenAgents, 'utf8').replace(/\r\n/g, '\n');
+
+    // Sync manifest LF-SHA256 for .cac/rules/AGENTS.md so ONLY the paths: frontmatter guard triggers exit 1
+    const writeAgentsWithSyncedManifest = (rawText) => {
+      fs.writeFileSync(hiddenAgents, rawText, 'utf8');
+      const normBuf = Buffer.from(Buffer.from(rawText, 'utf8').filter((b) => b !== 0x0d));
+      const sha256 = createHash('sha256').update(normBuf).digest('hex');
+      const manifestObj = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      const entry = manifestObj.files.find((f) => f.path === '.cac/rules/AGENTS.md');
+      assert.ok(entry, 'expected .cac/rules/AGENTS.md in FRAMEWORK-MANIFEST.json');
+      entry.sha256 = sha256;
+      entry.bytes = normBuf.length;
+      fs.writeFileSync(manifestPath, JSON.stringify(manifestObj, null, 2) + '\n', 'utf8');
+    };
+
+    // 1. LF block paths: frontmatter -> exit 1
+    const lfPoisoned = ['---', 'paths:', '  - "src/**"', '---', '', cleanBody].join('\n');
+    writeAgentsWithSyncedManifest(lfPoisoned);
+    const rLfHuman = runNode(targetDoctor, [target]);
+    assert.equal(rLfHuman.status, 1, `expected exit 1 on LF paths: frontmatter, got ${rLfHuman.status}`);
+    assert.match(rLfHuman.stderr, /\.cac\/rules\/AGENTS\.md.*paths:/);
+
+    const rLfJson = runNode(targetDoctor, [target, '--json']);
+    assert.equal(rLfJson.status, 1);
+    const lfParsed = JSON.parse(rLfJson.stdout.trim());
+    assert.equal(lfParsed.ok, false);
+    assert.equal(lfParsed.detail.errors.some((e) => e.includes('LF-SHA256')), false, 'manifest hash was synced; failure must come solely from paths: guard');
+    assert.equal(
+      lfParsed.detail.errors.some((e) => e.includes('.cac/rules/AGENTS.md') && e.includes('paths:')),
+      true,
+      `expected paths: frontmatter error in ${JSON.stringify(lfParsed.detail.errors)}`,
+    );
+
+    // 2. Windows CRLF (\r\n) block paths: frontmatter (with UTF-8 BOM) -> exit 1
+    const crlfPoisoned = '\uFEFF' + ['---', 'paths:', '  - "src/**"', '---', '', cleanBody.replace(/\n/g, '\r\n')].join('\r\n');
+    writeAgentsWithSyncedManifest(crlfPoisoned);
+    const rCrlfJson = runNode(targetDoctor, [target, '--json']);
+    assert.equal(rCrlfJson.status, 1, `expected exit 1 on CRLF paths: frontmatter, got ${rCrlfJson.status}`);
+    const crlfParsed = JSON.parse(rCrlfJson.stdout.trim());
+    assert.equal(crlfParsed.ok, false);
+    assert.equal(
+      crlfParsed.detail.errors.some((e) => e.includes('.cac/rules/AGENTS.md') && e.includes('paths:')),
+      true,
+    );
+
+    // 3. CRLF inline flow paths: ["**"] -> exit 1
+    const inlinePoisoned = ['---', 'paths: ["**"]', '---', '', cleanBody.replace(/\n/g, '\r\n')].join('\r\n');
+    writeAgentsWithSyncedManifest(inlinePoisoned);
+    const rInline = runNode(targetDoctor, [target, '--json']);
+    assert.equal(rInline.status, 1);
+
+    // 4. Restoring headerless .cac/rules/AGENTS.md -> passes cleanly (exit 0)
+    writeAgentsWithSyncedManifest(cleanBody);
+    const rClean = runNode(targetDoctor, [target, '--json']);
+    assert.equal(rClean.status, 0, `expected exit 0 once paths: frontmatter is removed: ${rClean.stdout}`);
+  });
+
+  test('[Regression HOST-CONTRACT §2] .cac/rules/AGENTS.md with quoted "paths": or bare non-paths YAML frontmatter (including ---   \\r\\n trailing spaces) fails doctor.mjs with exit 1 when manifest SHA256 is synced', () => {
+    const target = installTarget('agents-fm-edge-guard');
+    const targetDoctor = path.join(target, '.cac', 'scripts', 'doctor.mjs');
+    const hiddenAgents = path.join(target, '.cac', 'rules', 'AGENTS.md');
+    const manifestPath = path.join(target, '.cac', 'FRAMEWORK-MANIFEST.json');
+    const cleanBody = fs.readFileSync(hiddenAgents, 'utf8').replace(/\r\n/g, '\n');
+
+    const writeAgentsWithSyncedManifest = (rawText) => {
+      fs.writeFileSync(hiddenAgents, rawText, 'utf8');
+      const normBuf = Buffer.from(Buffer.from(rawText, 'utf8').filter((b) => b !== 0x0d));
+      const sha256 = createHash('sha256').update(normBuf).digest('hex');
+      const manifestObj = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      const entry = manifestObj.files.find((f) => f.path === '.cac/rules/AGENTS.md');
+      assert.ok(entry, 'expected .cac/rules/AGENTS.md in FRAMEWORK-MANIFEST.json');
+      entry.sha256 = sha256;
+      entry.bytes = normBuf.length;
+      fs.writeFileSync(manifestPath, JSON.stringify(manifestObj, null, 2) + '\n', 'utf8');
+    };
+
+    const forbiddenHeaders = [
+      {
+        label: 'double-quoted "paths": flow header (LF)',
+        raw: ['---', '"paths": ["src/**"]', '---', '', cleanBody].join('\n'),
+      },
+      {
+        label: 'double-quoted "paths": block header with trailing spaces & CRLF (---   \\r\\n)',
+        raw: ['---   ', '"paths":', '  - "src/**"', '---   ', '', cleanBody.replace(/\n/g, '\r\n')].join('\r\n'),
+      },
+      {
+        label: 'bare non-paths frontmatter (---\\ntitle: x\\n---)',
+        raw: ['---', 'title: x', '---', '', cleanBody].join('\n'),
+      },
+      {
+        label: 'BOM + bare non-paths frontmatter with trailing spaces & CRLF (---   \\r\\n)',
+        raw: '\uFEFF' + ['---   ', 'title: x', '---   ', '', cleanBody.replace(/\n/g, '\r\n')].join('\r\n'),
+      },
+      {
+        label: 'unclosed opening YAML fence with trailing spaces & CRLF',
+        raw: ['---   ', 'title: unclosed', '', cleanBody.replace(/\n/g, '\r\n')].join('\r\n'),
+      },
+    ];
+
+    for (const { label, raw } of forbiddenHeaders) {
+      writeAgentsWithSyncedManifest(raw);
+
+      const rHuman = runNode(targetDoctor, [target]);
+      assert.equal(rHuman.status, 1, `expected human doctor exit 1 for ${label}, got ${rHuman.status}`);
+
+      const rJson = runNode(targetDoctor, [target, '--json']);
+      assert.equal(rJson.status, 1, `expected json doctor exit 1 for ${label}, got ${rJson.status}: ${rJson.stdout}`);
+      const parsed = JSON.parse(rJson.stdout.trim());
+      assert.equal(parsed.ok, false);
+      assert.equal(
+        parsed.detail.errors.some((e) => e.includes('LF-SHA256')),
+        false,
+        `manifest SHA256 was synced for ${label}; failure must come strictly from frontmatter guard`,
+      );
+      assert.equal(
+        parsed.detail.errors.some((e) => e.includes('.cac/rules/AGENTS.md')),
+        true,
+        `expected .cac/rules/AGENTS.md error for ${label}, got: ${JSON.stringify(parsed.detail.errors)}`,
+      );
+    }
+
+    // Headerless .cac/rules/AGENTS.md containing a normal Markdown thematic break (`---`) in body must exit 0
+    writeAgentsWithSyncedManifest(`${cleanBody}\n---\n`);
+    const rCleanHr = runNode(targetDoctor, [target, '--json']);
+    assert.equal(rCleanHr.status, 0, `expected exit 0 for headerless AGENTS.md with body thematic break: ${rCleanHr.stdout}`);
   });
 });

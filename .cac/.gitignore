@@ -17,6 +17,7 @@ harness/waivers/
 harness/trend/
 harness/evidence/
 agent-memory/
+local/
 settings.local.json
 .credentials.json
 *.bak

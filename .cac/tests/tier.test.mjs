@@ -138,36 +138,39 @@ test('tier validates --sticky legal shape and rejects malformed sticky records',
   }
 });
 
-test('governance asset edits automatically raise tier to strict while runtime state files never trigger raise', () => {
+test('governance asset edits (.cac/rules/AGENTS.md) automatically raise tier to strict while runtime state and external root AGENTS.md do not trigger raise', () => {
   const dir = mkTmpRepo({
     files: {
-      'AGENTS.md': '# Constitution v1\n',
+      '.cac/rules/AGENTS.md': '# Constitution v1\n',
+      'AGENTS.md': '# External Tool Root AGENTS.md v1\n',
     },
   });
   try {
     runNode(HARNESS_ENTRY, ['tier', 'set', 'fast', '--hours', '2', '--reason', 'check-raise'], { cwd: dir });
 
-    // Dirty runtime state files -> must NOT trigger raise!
+    // Dirty runtime state files + external root AGENTS.md -> must NOT trigger raise!
     writeFiles(dir, {
       '.cac/.needs-review': 'src/index.ts\n',
       '.cac/signals.jsonl': '{"signal":"不对"}\n',
       '.cac/harness/state/sessions.jsonl': '{"event":"subagent_start"}\n',
       '.cac/evidence/test-ledger.jsonl': '{"file":"a.test.mjs","case":"x","result":"PASS"}\n',
       '.cac/.red-verified': 'ok\n',
+      'AGENTS.md': '# External Tool Root AGENTS.md v2 (edited by Codex/agy-base)\n',
     });
 
     const stillFast = runNode(HARNESS_ENTRY, ['tier', 'status'], { cwd: dir });
     assert.equal(stillFast.status, 0);
-    assert.equal(stillFast.json?.tier, 'fast', 'Runtime state files must NOT trigger governance raise');
+    assert.equal(stillFast.json?.tier, 'fast', 'Runtime state files and external root AGENTS.md must NOT trigger governance raise');
     assert.equal(stillFast.json?.source, 'session');
 
-    // Modify governance asset AGENTS.md -> auto-raises to strict!
-    writeFiles(dir, { 'AGENTS.md': '# Constitution v2 (edited)\n' });
+    // Modify governance asset .cac/rules/AGENTS.md -> auto-raises to strict!
+    writeFiles(dir, { '.cac/rules/AGENTS.md': '# Constitution v2 (edited)\n' });
     const raised = runNode(HARNESS_ENTRY, ['tier', 'status'], { cwd: dir });
     assert.equal(raised.status, 0);
     assert.equal(raised.json?.tier, 'strict');
     assert.equal(raised.json?.source, 'raise');
-    assert.ok(Array.isArray(raised.json?.raisedBy) && raised.json.raisedBy.includes('AGENTS.md'));
+    assert.ok(Array.isArray(raised.json?.raisedBy) && raised.json.raisedBy.includes('.cac/rules/AGENTS.md'));
+    assert.equal(raised.json.raisedBy.includes('AGENTS.md'), false);
     assert.equal(raised.json?.hooks?.['stop-gate'], 'block');
   } finally {
     cleanupTmp(dir);

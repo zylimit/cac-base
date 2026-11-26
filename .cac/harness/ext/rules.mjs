@@ -10,7 +10,8 @@ import { loadCatalogFlag } from './catalog.mjs';
 // ===========================================================================
 // S22.1 rules-audit
 // ===========================================================================
-const RULES_DOC = 'AGENTS.md';
+const RULES_DOC = '.cac/rules/AGENTS.md';
+const LEGACY_RULES_DOC = 'AGENTS.md';
 const RULES_DIR = '.cac/rules';
 
 const POINT_DIRS = [
@@ -165,6 +166,11 @@ function classifyToken(token, points) {
   if (points.subcommands.has(head)) return { kind: 'machine', target: head, reason: 'subcommand' };
 
   const rel = head.replace(/^\.\//, '');
+  if (rel === 'setup.sh' || rel === 'setup.ps1') {
+    return points.files.has(rel)
+      ? { kind: 'machine', target: rel, reason: 'file' }
+      : { kind: 'none' };
+  }
   if (!rel.includes('/') && POINT_EXTS.includes(path.extname(rel)) && points.basenames.has(rel)) {
     return { kind: 'machine', target: rel, reason: 'file' };
   }
@@ -201,12 +207,17 @@ function classifyRuleLine(text, points) {
 function ruleDocs(root = projectRoot()) {
   const docs = [];
   const main = path.join(root, RULES_DOC);
-  if (fs.existsSync(main)) docs.push(RULES_DOC);
+  if (fs.existsSync(main)) {
+    docs.push(RULES_DOC);
+  } else if (fs.existsSync(path.join(root, LEGACY_RULES_DOC))) {
+    docs.push(LEGACY_RULES_DOC);
+  }
   const dir = path.join(root, RULES_DIR);
   let names = [];
   try { names = fs.readdirSync(dir); } catch (_e) { names = []; }
   for (const name of names.filter((n) => n.endsWith('.md')).sort()) {
-    docs.push('.cac/rules/' + name);
+    const rel = '.cac/rules/' + name;
+    if (!docs.some((d) => d.toLowerCase() === rel.toLowerCase())) docs.push(rel);
   }
   return docs;
 }

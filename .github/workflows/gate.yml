@@ -125,20 +125,37 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("cac-ci-e2e-" + [guid]::NewGuid().ToString('N'))
+          $tmpDry = Join-Path ([System.IO.Path]::GetTempPath()) ("cac-ci-dry-" + [guid]::NewGuid().ToString('N'))
           try {
             # 0. Reject reserved Windows path segment before mkdir
-            & pwsh -NoProfile -File .\setup.ps1 (Join-Path $tmp 'CON')
+            & pwsh -NoProfile -File .\setup.ps1 (Join-Path $tmpDry 'CON')
             if ($LASTEXITCODE -eq 0) { throw "Expected CON path rejection" }
-            if (Test-Path -LiteralPath (Join-Path $tmp 'CON')) { throw "CON directory must not be created" }
+            if (Test-Path -LiteralPath (Join-Path $tmpDry 'CON')) { throw "CON directory must not be created" }
 
             # 1. Dry-run leaves zero files on disk
-            & pwsh -NoProfile -File .\setup.ps1 $tmp -DryRun -WithHarness -WithTests
+            & pwsh -NoProfile -File .\setup.ps1 $tmpDry -DryRun -WithHarness -WithTests
             if ($LASTEXITCODE -ne 0) { throw "setup.ps1 -DryRun failed ($LASTEXITCODE)" }
-            if (Test-Path -LiteralPath $tmp) { throw "DryRun must not create target directory" }
+            if (Test-Path -LiteralPath $tmpDry) { throw "DryRun must not create target directory" }
 
-            # 2. Full install with -WithHarness -WithTests
+            # Pre-seed external root AGENTS.md & CLAUDE.md before install to verify coexistence
+            New-Item -ItemType Directory -Path $tmp -Force | Out-Null
+            $extAgentsPath = Join-Path $tmp 'AGENTS.md'
+            $extClaudePath = Join-Path $tmp 'CLAUDE.md'
+            $extAgentsContent = "# External Downstream Root AGENTS.md`nManaged outside cac-base.`n"
+            $extClaudeContent = "# External Downstream Root CLAUDE.md`nManaged outside cac-base.`n"
+            [System.IO.File]::WriteAllText($extAgentsPath, $extAgentsContent, [System.Text.UTF8Encoding]::new($false))
+            [System.IO.File]::WriteAllText($extClaudePath, $extClaudeContent, [System.Text.UTF8Encoding]::new($false))
+
+            # 2. Full install with -WithHarness -WithTests (preserves external root AGENTS.md & CLAUDE.md untouched)
             & pwsh -NoProfile -File .\setup.ps1 install -Target $tmp -WithHarness -WithTests
             if ($LASTEXITCODE -ne 0) { throw "setup.ps1 install failed ($LASTEXITCODE)" }
+            if (-not (Test-Path -LiteralPath $extAgentsPath) -or [System.IO.File]::ReadAllText($extAgentsPath) -ne $extAgentsContent) {
+              throw "External root AGENTS.md must remain intact after install"
+            }
+            if (-not (Test-Path -LiteralPath $extClaudePath) -or [System.IO.File]::ReadAllText($extClaudePath) -ne $extClaudeContent) {
+              throw "External root CLAUDE.md must remain intact after install"
+            }
+            if (-not (Test-Path -LiteralPath (Join-Path $tmp '.cac/rules/AGENTS.md'))) { throw "Missing .cac/rules/AGENTS.md" }
             if (-not (Test-Path -LiteralPath (Join-Path $tmp '.cac/FRAMEWORK-MANIFEST.json'))) { throw "Missing FRAMEWORK-MANIFEST.json" }
             if (-not (Test-Path -LiteralPath (Join-Path $tmp '.cac/FRAMEWORK-MANIFEST-OPTIONAL.json'))) { throw "Missing FRAMEWORK-MANIFEST-OPTIONAL.json" }
             if (-not (Test-Path -LiteralPath (Join-Path $tmp '.cac/rules/harness-large-repo.md'))) { throw "Missing harness-large-repo.md in .cac/rules/" }
@@ -148,7 +165,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "doctor.mjs failed on installed target: $docJson" }
 
             # 4. Idempotent upgrade + user-modified conflict -> .cac-base-new (never overwrites user edit)
-            $userEdited = Join-Path $tmp 'AGENTS.md'
+            $userEdited = Join-Path $tmp '.cac/rules/AGENTS.md'
             Add-Content -LiteralPath $userEdited -Value "`n# Local Project Custom Rule`n" -Encoding utf8NoBOM
             $ruleTarget = Join-Path $tmp '.cac/rules/file-structure.md'
             $origRule = Get-Content -LiteralPath $ruleTarget -Raw
@@ -156,16 +173,23 @@ jobs:
 
             & pwsh -NoProfile -File .\setup.ps1 upgrade -Target $tmp -WithHarness
             if ($LASTEXITCODE -ne 0) { throw "setup.ps1 upgrade failed ($LASTEXITCODE)" }
-            if (-not (Test-Path -LiteralPath ($userEdited + '.cac-base-new'))) { throw "Expected AGENTS.md.cac-base-new on user-edited AGENTS.md" }
+            if (-not (Test-Path -LiteralPath ($userEdited + '.cac-base-new'))) { throw "Expected .cac/rules/AGENTS.md.cac-base-new on user-edited .cac/rules/AGENTS.md" }
+            if ((Get-Content -LiteralPath $userEdited -Raw) -notmatch 'Local Project Custom Rule') { throw "User edit in .cac/rules/AGENTS.md was overwritten!" }
             if (-not (Test-Path -LiteralPath ($ruleTarget + '.cac-base-new'))) { throw "Expected file-structure.md.cac-base-new on user-edited rule" }
             if ((Get-Content -LiteralPath $ruleTarget -Raw) -notmatch 'local-customization') { throw "User edit in file-structure.md was overwritten!" }
 
-            # 5. Restore clean files via -Force, verify doctor passes again
+            # 5. Restore clean files via -Force, verify doctor passes again and external root files stay intact
             Remove-Item -LiteralPath ($userEdited + '.cac-base-new'), ($ruleTarget + '.cac-base-new') -Force
             & pwsh -NoProfile -File .\setup.ps1 upgrade -Target $tmp -Force -WithHarness -WithTests
             if ($LASTEXITCODE -ne 0) { throw "setup.ps1 -Force upgrade failed ($LASTEXITCODE)" }
             & node (Join-Path $tmp '.cac/scripts/doctor.mjs') $tmp --json | Out-Null
             if ($LASTEXITCODE -ne 0) { throw "doctor.mjs failed after -Force upgrade" }
+            if (-not (Test-Path -LiteralPath $extAgentsPath) -or [System.IO.File]::ReadAllText($extAgentsPath) -ne $extAgentsContent) {
+              throw "External root AGENTS.md must remain intact after -Force upgrade"
+            }
+            if (-not (Test-Path -LiteralPath $extClaudePath) -or [System.IO.File]::ReadAllText($extClaudePath) -ne $extClaudeContent) {
+              throw "External root CLAUDE.md must remain intact after -Force upgrade"
+            }
 
             # 6. Fault injection leaves interrupted marker caught by doctor.mjs, then clean reinstall recovers
             $tmpFail = Join-Path ([System.IO.Path]::GetTempPath()) ("cac-ci-fail-" + [guid]::NewGuid().ToString('N'))
@@ -180,13 +204,21 @@ jobs:
             if ($LASTEXITCODE -eq 0) { throw "Expected doctor.mjs to report bad on interrupted install.marker" }
             Remove-Item -LiteralPath $tmpFail -Recurse -Force -ErrorAction SilentlyContinue
 
-            # 7. Uninstall cleans framework assets while preserving .bak backups / user files
+            # 7. Uninstall cleans framework assets while preserving .bak backups / external root user files
             & pwsh -NoProfile -File .\setup.ps1 -Uninstall -Target $tmp -Force
             if ($LASTEXITCODE -ne 0) { throw "setup.ps1 -Uninstall failed ($LASTEXITCODE)" }
             if (Test-Path -LiteralPath (Join-Path $tmp '.cac/FRAMEWORK-MANIFEST.json')) { throw "Manifest should be removed after uninstall" }
+            if (-not (Test-Path -LiteralPath $extAgentsPath) -or [System.IO.File]::ReadAllText($extAgentsPath) -ne $extAgentsContent) {
+              throw "External root AGENTS.md must remain intact after -Uninstall -Force"
+            }
+            if (-not (Test-Path -LiteralPath $extClaudePath) -or [System.IO.File]::ReadAllText($extClaudePath) -ne $extClaudeContent) {
+              throw "External root CLAUDE.md must remain intact after -Uninstall -Force"
+            }
           } finally {
-            if (Test-Path -LiteralPath $tmp) {
-              Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+            foreach ($d in @($tmp, $tmpDry)) {
+              if (Test-Path -LiteralPath $d) {
+                Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction SilentlyContinue
+              }
             }
           }
 
@@ -198,46 +230,64 @@ jobs:
           bash -n setup.sh
 
           TMP_DIR="$(mktemp -d "${RUNNER_TEMP:-/tmp}/cac-ci-e2e.XXXXXX")"
+          TMP_DRY="$(mktemp -d "${RUNNER_TEMP:-/tmp}/cac-ci-dry.XXXXXX")"
           TMP_FAIL="$(mktemp -d "${RUNNER_TEMP:-/tmp}/cac-ci-fail.XXXXXX")"
-          rm -rf "$TMP_DIR" "$TMP_FAIL"
-          trap 'rm -rf "$TMP_DIR" "$TMP_FAIL"' EXIT
+          rm -rf "$TMP_DIR" "$TMP_DRY" "$TMP_FAIL"
+          trap 'rm -rf "$TMP_DIR" "$TMP_DRY" "$TMP_FAIL"' EXIT
 
           # 0. Reject unknown flag and Windows reserved name CON
-          if ./setup.sh --dryrun "$TMP_DIR" 2>/dev/null; then
+          if ./setup.sh --dryrun "$TMP_DRY" 2>/dev/null; then
             echo "::error::unknown option --dryrun must fail with exit 2"
             exit 1
           fi
-          if ./setup.sh "$TMP_DIR/CON" 2>/dev/null; then
+          if ./setup.sh "$TMP_DRY/CON" 2>/dev/null; then
             echo "::error::Windows reserved segment CON must be rejected on Linux too"
             exit 1
           fi
 
           # 1. Dry-run creates nothing
-          ./setup.sh "$TMP_DIR" --dry-run --with-harness --with-tests
-          if [ -e "$TMP_DIR" ]; then
+          ./setup.sh "$TMP_DRY" --dry-run --with-harness --with-tests
+          if [ -e "$TMP_DRY" ]; then
             echo "::error::--dry-run created target directory"
             exit 1
           fi
 
-          # 2. Full install + doctor
+          # Pre-seed external root AGENTS.md & CLAUDE.md before install
+          mkdir -p "$TMP_DIR"
+          EXT_AGENTS_CONTENT=$'# External Downstream Root AGENTS.md\nManaged outside cac-base.'
+          EXT_CLAUDE_CONTENT=$'# External Downstream Root CLAUDE.md\nManaged outside cac-base.'
+          printf '%s\n' "$EXT_AGENTS_CONTENT" > "$TMP_DIR/AGENTS.md"
+          printf '%s\n' "$EXT_CLAUDE_CONTENT" > "$TMP_DIR/CLAUDE.md"
+
+          # 2. Full install + external root preservation check + doctor
           ./setup.sh install --target "$TMP_DIR" --with-harness --with-tests
+          test -f "$TMP_DIR/AGENTS.md"
+          test "$(cat "$TMP_DIR/AGENTS.md")" = "$EXT_AGENTS_CONTENT"
+          test -f "$TMP_DIR/CLAUDE.md"
+          test "$(cat "$TMP_DIR/CLAUDE.md")" = "$EXT_CLAUDE_CONTENT"
+          test -f "$TMP_DIR/.cac/rules/AGENTS.md"
           test -f "$TMP_DIR/.cac/FRAMEWORK-MANIFEST.json"
           test -f "$TMP_DIR/.cac/FRAMEWORK-MANIFEST-OPTIONAL.json"
           test -f "$TMP_DIR/.cac/rules/harness-large-repo.md"
           node "$TMP_DIR/.cac/scripts/doctor.mjs" "$TMP_DIR" --json
 
           # 3. Conflict preservation (.cac-base-new)
-          printf '\n# Local custom rule\n' >> "$TMP_DIR/AGENTS.md"
+          printf '\n# Local custom rule\n' >> "$TMP_DIR/.cac/rules/AGENTS.md"
           printf '\n<!-- local-edit -->\n' >> "$TMP_DIR/.cac/rules/file-structure.md"
           ./setup.sh upgrade --target "$TMP_DIR" --with-harness
-          test -f "$TMP_DIR/AGENTS.md.cac-base-new"
+          test -f "$TMP_DIR/.cac/rules/AGENTS.md.cac-base-new"
+          grep -q 'Local custom rule' "$TMP_DIR/.cac/rules/AGENTS.md"
           test -f "$TMP_DIR/.cac/rules/file-structure.md.cac-base-new"
           grep -q 'local-edit' "$TMP_DIR/.cac/rules/file-structure.md"
 
-          # 4. Force upgrade + doctor
-          rm -f "$TMP_DIR/AGENTS.md.cac-base-new" "$TMP_DIR/.cac/rules/file-structure.md.cac-base-new"
+          # 4. Force upgrade + doctor + external root preservation
+          rm -f "$TMP_DIR/.cac/rules/AGENTS.md.cac-base-new" "$TMP_DIR/.cac/rules/file-structure.md.cac-base-new"
           ./setup.sh upgrade --target "$TMP_DIR" --force --with-harness --with-tests
           node "$TMP_DIR/.cac/scripts/doctor.mjs" "$TMP_DIR" --json
+          test -f "$TMP_DIR/AGENTS.md"
+          test "$(cat "$TMP_DIR/AGENTS.md")" = "$EXT_AGENTS_CONTENT"
+          test -f "$TMP_DIR/CLAUDE.md"
+          test "$(cat "$TMP_DIR/CLAUDE.md")" = "$EXT_CLAUDE_CONTENT"
 
           # 5. Fault injection marker detection
           if CAC_SETUP_FAIL_AFTER=2 ./setup.sh "$TMP_FAIL" 2>/dev/null; then
@@ -249,9 +299,13 @@ jobs:
             exit 1
           fi
 
-          # 6. Uninstall
+          # 6. Uninstall + external root preservation
           ./setup.sh --uninstall --target "$TMP_DIR" --force
           test ! -f "$TMP_DIR/.cac/FRAMEWORK-MANIFEST.json"
+          test -f "$TMP_DIR/AGENTS.md"
+          test "$(cat "$TMP_DIR/AGENTS.md")" = "$EXT_AGENTS_CONTENT"
+          test -f "$TMP_DIR/CLAUDE.md"
+          test "$(cat "$TMP_DIR/CLAUDE.md")" = "$EXT_CLAUDE_CONTENT"
 
       - name: Repository doctor & pack-check
         run: |

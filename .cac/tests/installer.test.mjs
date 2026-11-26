@@ -135,18 +135,21 @@ describe('installer & setup CLI contract', () => {
     assert.equal(rDry.status, 0, rDry.stderr);
     assert.equal(fs.existsSync(shDry), false, 'setup.sh --dry-run must leave zero files');
 
-    // Positional, --target=<dir>, and --target <dir> real installs
-    const shPos = nextDir('sh-pos');
-    assert.equal(runSetupSh([shPos]).status, 0);
-    assert.equal(fs.existsSync(path.join(shPos, 'AGENTS.md')), true);
-
-    const shEq = nextDir('sh-eq');
-    assert.equal(runSetupSh([`--target=${shEq}`]).status, 0);
-    assert.equal(fs.existsSync(path.join(shEq, 'AGENTS.md')), true);
-
-    const shSp = nextDir('sh-sp');
-    assert.equal(runSetupSh(['--target', shSp]).status, 0);
-    assert.equal(fs.existsSync(path.join(shSp, 'AGENTS.md')), true);
+    // Positional, --target=<dir>, and --target <dir> real installs (zero root file intrusion)
+    for (const [label, args] of [
+      ['sh-pos', (d) => [d]],
+      ['sh-eq', (d) => [`--target=${d}`]],
+      ['sh-sp', (d) => ['--target', d]],
+    ]) {
+      const shDir = nextDir(label);
+      const rSh = runSetupSh(args(shDir));
+      assert.equal(rSh.status, 0, rSh.stderr);
+      assert.deepEqual(fs.readdirSync(shDir).sort(), ['.cac'], `${label}: target root must only contain .cac`);
+      assert.equal(fs.existsSync(path.join(shDir, 'AGENTS.md')), false, `${label}: root AGENTS.md must not exist`);
+      const hiddenAgents = path.join(shDir, '.cac', 'rules', 'AGENTS.md');
+      assert.equal(fs.existsSync(hiddenAgents), true, `${label}: .cac/rules/AGENTS.md must exist`);
+      assert.ok(fs.statSync(hiddenAgents).size > 0, `${label}: .cac/rules/AGENTS.md must be non-empty`);
+    }
   });
 
   test('path-guard rejects "..", control chars, <>:"|?*, Windows reserved names, and trailing dot/space before any mkdir', () => {
@@ -177,19 +180,32 @@ describe('installer & setup CLI contract', () => {
     assert.deepEqual(fs.readdirSync(parentSandbox), [], 'rejected target paths must not create any directory');
   });
 
-  test('default lightweight install produces zero framework repo pollution in target directory', () => {
+  test('default lightweight install produces zero root file intrusion and zero framework repo pollution in target directory', () => {
     const target = nextDir('lightweight-clean');
     const r = runNode(CAC_CLI, ['install', '--target', target, '--json']);
     assert.equal(r.status, 0, r.stderr);
     const report = JSON.parse(r.stdout.trim());
     assert.equal(report.status, 'ok');
 
-    // Top-level directory MUST contain ONLY .cac and AGENTS.md
+    // Top-level directory MUST contain ONLY .cac (zero root file intrusion; no root AGENTS.md)
     const rootEntries = fs.readdirSync(target).sort();
-    assert.deepEqual(rootEntries, ['.cac', 'AGENTS.md']);
+    assert.deepEqual(rootEntries, ['.cac']);
 
-    // Explicitly verify forbidden framework-own artifacts are absent
+    // Hidden constitution .cac/rules/AGENTS.md MUST exist, be non-empty, and match framework source
+    const hiddenAgentsPath = path.join(target, '.cac', 'rules', 'AGENTS.md');
+    assert.equal(fs.existsSync(hiddenAgentsPath), true, '.cac/rules/AGENTS.md must exist');
+    const hiddenAgentsText = fs.readFileSync(hiddenAgentsPath, 'utf8');
+    assert.ok(hiddenAgentsText.trim().length > 0, '.cac/rules/AGENTS.md must be non-empty');
+    assert.equal(hiddenAgentsText, fs.readFileSync(path.join(REPO_ROOT, '.cac', 'rules', 'AGENTS.md'), 'utf8'));
+
+    // Manifest must declare seeded: [] and track .cac/rules/AGENTS.md as a regular managed file
+    const manifestObj = JSON.parse(fs.readFileSync(path.join(target, '.cac', 'FRAMEWORK-MANIFEST.json'), 'utf8'));
+    assert.deepEqual(manifestObj.seeded, []);
+    assert.equal(manifestObj.files.some((f) => f.path === '.cac/rules/AGENTS.md'), true);
+
+    // Explicitly verify forbidden root & framework-own artifacts are absent
     const forbiddenRelPaths = [
+      'AGENTS.md',
       'progress.md',
       'README.md',
       'ARCHITECTURE.md',
@@ -220,7 +236,72 @@ describe('installer & setup CLI contract', () => {
     assert.equal(fs.existsSync(path.join(target, '.cac', 'EVOLUTION.md')), true);
   });
 
-  test('3-way lossless upgrade: updates unmodified files with .bak, preserves user-edited rules & AGENTS.md via .cac-base-new, and never clears FEEDBACK-INDEX.md', () => {
+  test('multi-tool coexistence: install -> upgrade --force -> uninstall --force preserves external AGENTS.md, .claude/CLAUDE.md, .agents/rules/init.md, and .cursor/rules/init.mdc byte-for-byte', () => {
+    const target = nextDir('multi-tool-coexist');
+    const externalFixtures = {
+      'AGENTS.md': Buffer.from('# External Codex / agy-base Root Constitution\r\n\r\n- Keep exact CRLF & UTF-8 bytes (严禁覆盖或误删)!\r\n', 'utf8'),
+      '.claude/CLAUDE.md': Buffer.from('# cc-base Claude Constitution\n\n- Managed by .claude toolchain.\n', 'utf8'),
+      '.agents/rules/init.md': Buffer.from('---\ntrigger: always_on\n---\n\n# agy-base Init Rule\r\n', 'utf8'),
+      '.cursor/rules/init.mdc': Buffer.from('---\ndescription: Cursor workspace rule\nalwaysApply: true\n---\n\nPrefer strict types.\n', 'utf8'),
+    };
+
+    for (const [rel, buf] of Object.entries(externalFixtures)) {
+      const full = path.join(target, rel);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, buf);
+    }
+
+    const assertExternalIntact = (stage) => {
+      for (const [rel, expectedBuf] of Object.entries(externalFixtures)) {
+        const full = path.join(target, rel);
+        assert.equal(fs.existsSync(full), true, `[${stage}] external file ${rel} must still exist`);
+        const actualBuf = fs.readFileSync(full);
+        assert.equal(
+          Buffer.compare(actualBuf, expectedBuf),
+          0,
+          `[${stage}] external file ${rel} was mutated (expected ${expectedBuf.length}B, got ${actualBuf.length}B)`,
+        );
+        for (const suffix of ['.bak', '.cac-base-new', '.framework-new']) {
+          assert.equal(
+            fs.existsSync(`${full}${suffix}`),
+            false,
+            `[${stage}] external file ${rel} must not get sidecar/backup ${rel}${suffix}`,
+          );
+        }
+      }
+    };
+
+    // 1. Fresh install onto multi-tool repository
+    const rInst = runNode(CAC_CLI, ['install', '--target', target, '--with-harness', '--json']);
+    assert.equal(rInst.status, 0, rInst.stderr);
+    const hiddenAgents = path.join(target, '.cac', 'rules', 'AGENTS.md');
+    const srcHiddenAgentsBuf = fs.readFileSync(path.join(REPO_ROOT, '.cac', 'rules', 'AGENTS.md'));
+    assert.equal(fs.existsSync(hiddenAgents), true);
+    assert.equal(Buffer.compare(fs.readFileSync(hiddenAgents), srcHiddenAgentsBuf), 0);
+    assertExternalIntact('after install');
+
+    // 2. Customize .cac/rules/AGENTS.md locally, then run `upgrade --force`
+    fs.writeFileSync(hiddenAgents, '# Temporary local edit to verify --force overwrites .cac managed file only\n', 'utf8');
+    const rUpgForce = runNode(CAC_CLI, ['upgrade', '--force', '--target', target, '--with-harness', '--json']);
+    assert.equal(rUpgForce.status, 0, rUpgForce.stderr);
+    assert.equal(
+      Buffer.compare(fs.readFileSync(hiddenAgents), srcHiddenAgentsBuf),
+      0,
+      'upgrade --force must restore .cac/rules/AGENTS.md to framework bytes',
+    );
+    assertExternalIntact('after upgrade --force');
+
+    // 3. Run `uninstall --force` and verify all external files remain byte-for-byte intact
+    const rUninstForce = runNode(CAC_CLI, ['uninstall', '--force', '--target', target, '--json']);
+    assert.equal(rUninstForce.status, 0, rUninstForce.stderr);
+    assert.equal(fs.existsSync(path.join(target, '.cac', 'FRAMEWORK-MANIFEST.json')), false);
+    assert.equal(fs.existsSync(path.join(target, '.cac', 'FRAMEWORK-MANIFEST-OPTIONAL.json')), false);
+    assert.equal(fs.existsSync(hiddenAgents), false, 'uninstall --force must remove managed .cac/rules/AGENTS.md');
+    assert.equal(fs.existsSync(path.join(target, '.cac', 'scripts', 'doctor.mjs')), false);
+    assertExternalIntact('after uninstall --force');
+  });
+
+  test('3-way lossless upgrade: updates unmodified files with .bak, preserves user-edited .cac/rules/AGENTS.md & rules via .cac-base-new, and never clears FEEDBACK-INDEX.md', () => {
     const target = nextDir('three-way');
     assert.equal(runNode(CAC_CLI, ['install', '--target', target]).status, 0);
 
@@ -240,13 +321,14 @@ describe('installer & setup CLI contract', () => {
     entry.bytes = v1Hash.bytes;
     fs.writeFileSync(manifestPath, JSON.stringify(manifestObj, null, 2) + '\n', 'utf8');
 
-    // 2. Simulate user-edited .cac/rules/file-structure.md and root AGENTS.md
+    // 2. Simulate user-edited .cac/rules/file-structure.md and .cac/rules/AGENTS.md
     const userRuleRel = '.cac/rules/file-structure.md';
     const userRuleFull = path.join(target, userRuleRel);
     const userRuleCustom = fs.readFileSync(userRuleFull, 'utf8') + '\n<!-- USER_CUSTOM_FILE_STRUCTURE_RULE -->\n';
     fs.writeFileSync(userRuleFull, userRuleCustom, 'utf8');
 
-    const agentsFull = path.join(target, 'AGENTS.md');
+    const agentsRel = '.cac/rules/AGENTS.md';
+    const agentsFull = path.join(target, agentsRel);
     const agentsCustom = fs.readFileSync(agentsFull, 'utf8') + '\n# Project-Specific Domain Constitution\n';
     fs.writeFileSync(agentsFull, agentsCustom, 'utf8');
 
@@ -260,7 +342,7 @@ describe('installer & setup CLI contract', () => {
     assert.equal(rUpg.status, 0, rUpg.stderr);
     const upgReport = JSON.parse(rUpg.stdout.trim());
     assert.equal(upgReport.status, 'ok');
-    assert.ok(upgReport.conflicts.includes('AGENTS.md'));
+    assert.ok(upgReport.conflicts.includes(agentsRel));
     assert.ok(upgReport.conflicts.includes(userRuleRel));
 
     // Verify Case A: unmodified V1 file auto-updated to V2 and left .bak with V1 content
@@ -276,12 +358,14 @@ describe('installer & setup CLI contract', () => {
       fs.readFileSync(path.join(REPO_ROOT, userRuleRel), 'utf8'),
     );
 
-    assert.equal(fs.readFileSync(agentsFull, 'utf8'), agentsCustom, 'user edit in AGENTS.md must not be overwritten');
+    assert.equal(fs.readFileSync(agentsFull, 'utf8'), agentsCustom, 'user edit in .cac/rules/AGENTS.md must not be overwritten');
     assert.equal(fs.existsSync(`${agentsFull}.cac-base-new`), true);
     assert.equal(
       fs.readFileSync(`${agentsFull}.cac-base-new`, 'utf8'),
-      fs.readFileSync(path.join(REPO_ROOT, 'AGENTS.md'), 'utf8'),
+      fs.readFileSync(path.join(REPO_ROOT, agentsRel), 'utf8'),
     );
+    assert.equal(fs.existsSync(path.join(target, 'AGENTS.md')), false, 'upgrade must never create root AGENTS.md');
+    assert.equal(fs.existsSync(path.join(target, 'AGENTS.md.cac-base-new')), false);
 
     // Verify Case C: FEEDBACK-INDEX.md was NEVER cleared or overwritten
     assert.equal(fs.readFileSync(fbIndexFull, 'utf8'), fbCustom, 'FEEDBACK-INDEX.md must never be overwritten on upgrade');
@@ -419,17 +503,19 @@ describe('installer & setup CLI contract', () => {
     assert.equal(strRaw2, strRaw1, 'string -> exec -> string round-trip must be byte-for-byte lossless');
   });
 
-  test('--uninstall removes only unmodified managed files while preserving AGENTS.md, user project files, and modified .cac files', () => {
+  test('--uninstall removes unmodified managed files (including unmodified .cac/rules/AGENTS.md) while preserving user-modified .cac/rules/AGENTS.md, modified rules, and user project files', () => {
+    // Part A: when .cac/rules/AGENTS.md is customized by the user, non-force --uninstall preserves it
     const target = nextDir('uninstall-safe');
     assert.equal(runNode(CAC_CLI, ['install', '--target', target, '--with-harness']).status, 0);
 
-    // Add a user source file, customize AGENTS.md, and modify one managed .cac rule
+    // Add a user source file, customize .cac/rules/AGENTS.md, and modify one managed .cac rule
     const userSrc = path.join(target, 'src', 'app.mjs');
     fs.mkdirSync(path.dirname(userSrc), { recursive: true });
     fs.writeFileSync(userSrc, 'export const ok = true;\n', 'utf8');
 
-    const agentsPath = path.join(target, 'AGENTS.md');
-    const customAgents = fs.readFileSync(agentsPath, 'utf8') + '\n# Keep on uninstall\n';
+    const agentsRel = '.cac/rules/AGENTS.md';
+    const agentsPath = path.join(target, agentsRel);
+    const customAgents = fs.readFileSync(agentsPath, 'utf8') + '\n# Keep customized constitution on non-force uninstall\n';
     fs.writeFileSync(agentsPath, customAgents, 'utf8');
 
     const modifiedRuleRel = '.cac/rules/file-structure.md';
@@ -441,6 +527,7 @@ describe('installer & setup CLI contract', () => {
     assert.equal(rUninst.status, 0, rUninst.stderr);
     const res = JSON.parse(rUninst.stdout.trim());
     assert.equal(res.status, 'ok');
+    assert.ok(res.keptModified.includes(agentsRel));
     assert.ok(res.keptModified.includes(modifiedRuleRel));
 
     // Unmodified managed files and manifests are removed
@@ -449,12 +536,20 @@ describe('installer & setup CLI contract', () => {
     assert.equal(fs.existsSync(path.join(target, '.cac', 'scripts', 'doctor.mjs')), false);
     assert.equal(fs.existsSync(path.join(target, '.cac', 'rules', 'dev-workflow-details.md')), false);
 
-    // AGENTS.md, user source file, FEEDBACK-INDEX.md, EVOLUTION.md, and modified rule are preserved
+    // User-modified .cac/rules/AGENTS.md, modified rule, user source file, FEEDBACK-INDEX.md, and EVOLUTION.md are preserved
     assert.equal(fs.readFileSync(agentsPath, 'utf8'), customAgents);
     assert.equal(fs.existsSync(userSrc), true);
     assert.equal(fs.readFileSync(modifiedRulePath, 'utf8'), customRule);
     assert.equal(fs.existsSync(path.join(target, '.cac', 'feedback', 'FEEDBACK-INDEX.md')), true);
     assert.equal(fs.existsSync(path.join(target, '.cac', 'EVOLUTION.md')), true);
+
+    // Part B: when .cac/rules/AGENTS.md is unmodified, non-force --uninstall removes it cleanly
+    const cleanTarget = nextDir('uninstall-unmodified-agents');
+    assert.equal(runNode(CAC_CLI, ['install', '--target', cleanTarget]).status, 0);
+    assert.equal(fs.existsSync(path.join(cleanTarget, agentsRel)), true);
+    const rCleanUninst = runNode(CAC_CLI, ['--uninstall', '--target', cleanTarget, '--json']);
+    assert.equal(rCleanUninst.status, 0, rCleanUninst.stderr);
+    assert.equal(fs.existsSync(path.join(cleanTarget, agentsRel)), false, 'unmodified .cac/rules/AGENTS.md must be removed on uninstall');
   });
 
   test('[Regression MEDIUM-6] settings-merge does not duplicate secret-exfil-guard.mjs on upgrade when node.exe "${CODEAGENT3_PROJECT_DIR}\\.cac\\hooks\\..." already exists', () => {
@@ -543,5 +638,73 @@ describe('installer & setup CLI contract', () => {
       true,
       'User private rule Read(config/prod.key) must remain in settings.json after --uninstall --force',
     );
+  });
+
+  test('[Regression] manifest --check detects stale extra seeded entries in .cac/FRAMEWORK-MANIFEST.json and exits 1', () => {
+    const target = nextDir('manifest-stale-seeded');
+    assert.equal(runNode(CAC_CLI, ['install', '--target', target]).status, 0);
+
+    // Precondition: clean installed target passes manifest --check with seeded: []
+    const rClean = runNode(CAC_CLI, ['manifest', '--check', '--target', target]);
+    assert.equal(rClean.status, 0, `baseline manifest --check failed: ${rClean.stdout} ${rClean.stderr}`);
+    const cleanJson = JSON.parse(rClean.stdout.trim());
+    assert.equal(cleanJson.status, 'ok');
+    assert.deepEqual(cleanJson.problems, []);
+
+    const manifestPath = path.join(target, '.cac', 'FRAMEWORK-MANIFEST.json');
+    const manifestObj = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    assert.deepEqual(manifestObj.seeded, []);
+    assert.equal(fs.existsSync(path.join(target, 'AGENTS.md')), false);
+
+    // 1. Inject stale seeded entry while actual seeded on disk is empty -> must exit 1
+    manifestObj.seeded = [
+      {
+        path: 'AGENTS.md',
+        sha256: '0'.repeat(64),
+        bytes: 1,
+      },
+    ];
+    fs.writeFileSync(manifestPath, JSON.stringify(manifestObj, null, 2) + '\n', 'utf8');
+
+    const rStale = runNode(CAC_CLI, ['manifest', '--check', '--target', target]);
+    assert.equal(
+      rStale.status,
+      1,
+      `manifest --check must exit 1 on stale extra seeded entry, got ${rStale.status}: ${rStale.stdout} ${rStale.stderr}`,
+    );
+    const staleJson = JSON.parse(rStale.stdout.trim());
+    assert.equal(staleJson.code, 1);
+    assert.equal(staleJson.status, 'violation');
+    assert.ok(Array.isArray(staleJson.problems) && staleJson.problems.length >= 1);
+    assert.ok(
+      staleJson.problems.some((p) => p.includes('seeded') && p.includes('AGENTS.md')),
+      `expected seeded drift problem mentioning AGENTS.md, got: ${JSON.stringify(staleJson.problems)}`,
+    );
+
+    // 2. Even if an external root AGENTS.md exists on disk with matching hash/bytes, stale seeded must still exit 1
+    const extAgents = 'x';
+    fs.writeFileSync(path.join(target, 'AGENTS.md'), extAgents, 'utf8');
+    const extHash = lfSha256(extAgents);
+    manifestObj.seeded = [
+      {
+        path: 'AGENTS.md',
+        sha256: extHash.sha256,
+        bytes: extHash.bytes,
+      },
+    ];
+    fs.writeFileSync(manifestPath, JSON.stringify(manifestObj, null, 2) + '\n', 'utf8');
+
+    const rStaleWithExt = runNode(CAC_CLI, ['manifest', '--check', '--target', target]);
+    assert.equal(
+      rStaleWithExt.status,
+      1,
+      'manifest --check must still exit 1 on stale seeded entry when external root AGENTS.md exists',
+    );
+
+    // 3. Restoring seeded: [] returns manifest --check to exit 0
+    manifestObj.seeded = [];
+    fs.writeFileSync(manifestPath, JSON.stringify(manifestObj, null, 2) + '\n', 'utf8');
+    const rRestored = runNode(CAC_CLI, ['manifest', '--check', '--target', target]);
+    assert.equal(rRestored.status, 0, `restored manifest --check failed: ${rRestored.stdout}`);
   });
 });

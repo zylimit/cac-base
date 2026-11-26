@@ -6,7 +6,7 @@ paths:
 
 # 多套记忆系统边界规范（memory-systems）
 
-> 本文件由 `AGENTS.md` 下沉；写 feedback、维护 `progress.md`、动 `.cac/agent-memory/` 或判断知识归属前必须完整 `Read` 本文件。
+> 本文件由 `.cac/rules/AGENTS.md` 下沉；写 feedback、维护 `progress.md`、动 `.cac/agent-memory/` 或判断知识归属前必须完整 `Read` 本文件。
 
 ## 五类记忆各司其职（严禁混装）
 

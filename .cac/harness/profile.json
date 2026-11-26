@@ -32,8 +32,8 @@
       ".cac/skills/**",
       ".cac/agents/**",
       ".cac/rules/**",
+      ".cac/rules/AGENTS.md",
       ".cac/settings.json",
-      "AGENTS.md",
       ".github/**"
     ]
   },

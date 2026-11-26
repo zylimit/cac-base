@@ -22,7 +22,7 @@ user-invocable: false
        - 修正或推翻旧条目 → 新建条目并在 frontmatter `supersedes` 写旧文件名，同时在旧条目注明被新文件取代；
        - 全新主题 → 按 `.cac/feedback/templates/feedback-entry-template.md` 创建 kebab-case `.md` 文件（必填 `type`、`description`、`created`、`updated`、`occurrences`、`graduated: false`、`scope`、`exceptions`、`supersedes`、`applied_to`）。
     3. 若主 Agent 未传入「已落地的改变」，`applied_to` 填 `pending` 并在回执中醒目提示主 Agent 尚未将纠正落地到当前产物。
-    4. 在 `.cac/feedback/FEEDBACK-INDEX.md` 同步新增或更新对应索引行（`harness validate` 机器强校漏登）。
+    4. 在 `.cac/feedback/FEEDBACK-INDEX.md` 同步新增或更新对应索引行（供 `session-start.mjs` 待处理统计与 `evolution-engine` 聚类扫描读取）。
 
 [回执要求]
     按十字段信封返回，在 `Evidence` 中给出清晰的一行落账摘要与建议修改的 `rule / skill` 段落落点（或「当前产物已够，无需动框架本体」），供主 Agent 向用户回显「这次纠正改了……」。

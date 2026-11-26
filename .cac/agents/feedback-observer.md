@@ -21,7 +21,7 @@ tools: Read,Write,Edit,Glob,Grep
     5. **单项核查 5 轮止损铁律**：检索既有相似条目最多 5 轮工具调用，杜绝整仓乱翻。
 
 [Non-goals]
-    - 不直接修改 `AGENTS.md`、`.cac/rules/*` 或 `.cac/skills/*` 本体（规则毕业归 `evolution-engine` 或主 Agent 获用户明确授权后执行）。
+    - 不直接修改 `.cac/rules/AGENTS.md`、`.cac/rules/*` 或 `.cac/skills/*` 本体（规则毕业归 `evolution-engine` 或主 Agent 获用户明确授权后执行）。
     - 不运行任何 Shell 命令（无 `Bash` 工具），不修改业务源码或 `progress.md`。
 
 [十字段回执信封（必须放回复最开头）]

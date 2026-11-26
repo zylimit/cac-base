@@ -1,6 +1,6 @@
 // Stop hook：三文件同步铁律（progress.md + Product-Spec/CHANGELOG 成对）与设计详述（design-detail-sync）守门闸。
 //
-// C1：工作树有未提交代码/家底改动（含 .cac/ 与 AGENTS.md）且 progress.md 未同步；
+// C1：工作树有未提交代码/家底改动（含 .cac/ 与 .cac/rules/AGENTS.md）且 progress.md 未同步；
 // C2：Product-Spec.md 与 Product-Spec-CHANGELOG.md 均存在时仅改了其中一份；
 // DD：改动文件命中 docs/design/*.md 文首 `> 代码范围：` 通配而对应设计详述未同步。
 // 档位：standard 下 advise（1h 去重提醒）；strict（及家底改动自动升档）下 block（带 3 振熔断防死锁）。

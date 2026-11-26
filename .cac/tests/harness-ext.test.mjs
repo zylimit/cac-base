@@ -6,10 +6,12 @@ import assert from 'node:assert/strict';
 import {
   REPO_ROOT,
   HARNESS_ENTRY,
+  mkTmpDir,
   mkTmpRepo,
   cleanupTmp,
   writeFiles,
   gitIn,
+  runCmd,
   runNode,
 } from './helpers.mjs';
 import { scanArch } from '../harness/ext/graph.mjs';
@@ -310,5 +312,54 @@ test('run-all.mjs enforces risk level filtering, exit 2 on empty/all-skipped set
     assert.equal(ledgerLines.some((r) => r.file === 'skipped.test.mjs' && r.result === 'SKIPPED'), true);
   } finally {
     cleanupTmp(dir);
+  }
+});
+
+test('[Regression] downstream target installed via setup.sh --with-harness / cac-base.mjs --with-harness (without root setup.sh/setup.ps1) passes rules-audit with exit 0 and phantom === 0', () => {
+  const cacCli = path.join(REPO_ROOT, 'scripts', 'cac-base.mjs');
+  const setupSh = path.join(REPO_ROOT, 'setup.sh');
+  const hasBash = process.platform !== 'win32'
+    && (() => {
+      const r = runCmd('bash', ['--version']);
+      return !r.error && r.status === 0;
+    })();
+
+  const assertDownstreamRulesAuditClean = (targetDir, label) => {
+    assert.equal(fs.existsSync(path.join(targetDir, 'setup.sh')), false, `${label}: downstream target must not have root setup.sh`);
+    assert.equal(fs.existsSync(path.join(targetDir, 'setup.ps1')), false, `${label}: downstream target must not have root setup.ps1`);
+    assert.equal(fs.existsSync(path.join(targetDir, 'scripts')), false, `${label}: downstream target must not have root scripts/`);
+
+    const targetHarness = path.join(targetDir, '.cac', 'harness', 'harness.mjs');
+    const auditRes = runNode(targetHarness, ['rules-audit'], { cwd: targetDir });
+    assert.equal(
+      auditRes.status,
+      0,
+      `${label}: rules-audit in downstream target expected exit 0, got ${auditRes.status}: ${auditRes.stdout} ${auditRes.stderr}`,
+    );
+    assert.equal(auditRes.json?.ok, true, `${label}: rules-audit JSON ok must be true`);
+    assert.equal(auditRes.json?.counts?.phantom, 0, `${label}: rules-audit JSON counts.phantom must be 0`);
+    assert.deepEqual(auditRes.json?.phantom, [], `${label}: rules-audit JSON phantom array must be empty`);
+  };
+
+  // 1. Cross-platform Node installer path (works natively on Windows PowerShell & POSIX)
+  const nodeTarget = mkTmpDir('cac-rules-audit-node-');
+  try {
+    const instRes = runNode(cacCli, ['install', '--with-harness', '--target', nodeTarget]);
+    assert.equal(instRes.status, 0, `cac-base install --with-harness failed: ${instRes.stderr}`);
+    assertDownstreamRulesAuditClean(nodeTarget, 'cac-base.mjs --with-harness');
+  } finally {
+    cleanupTmp(nodeTarget);
+  }
+
+  // 2. POSIX setup.sh --with-harness wrapper path
+  if (hasBash) {
+    const shTarget = mkTmpDir('cac-rules-audit-sh-');
+    try {
+      const shRes = runCmd('bash', [setupSh, '--with-harness', shTarget], { cwd: REPO_ROOT });
+      assert.equal(shRes.status, 0, `setup.sh --with-harness failed: ${shRes.stderr}`);
+      assertDownstreamRulesAuditClean(shTarget, 'setup.sh --with-harness');
+    } finally {
+      cleanupTmp(shTarget);
+    }
   }
 });

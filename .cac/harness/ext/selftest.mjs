@@ -184,7 +184,7 @@ function selftestCases() {
     // --- S1 / S4 catalog & classification ---
     ['ext: toPosixPath normalizes Windows separators idempotently', () => {
       assert.equal(toPosixPath('a\\b\\c'), 'a/b/c');
-      assert.equal(toPosixPath(path.win32.join('.cac', 'AGENTS.md')), '.cac/AGENTS.md');
+      assert.equal(toPosixPath(path.win32.join('.cac', 'rules', 'AGENTS.md')), '.cac/rules/AGENTS.md');
       assert.ok(specificity('src/auth/**') > specificity('src/**'));
       assert.ok(!matchAny('src/a/b.ts', ['src/*']));
     }],
@@ -553,11 +553,11 @@ function selftestCases() {
       assert.equal(computeVerdict(oneErrSession).verdict, 'FIX_REQUIRED');
       assert.ok(reviewLenses(null).includes('correctness'));
     }],
-    ['ext: memory (AGENTS.md iron laws, archive, syncFindings) + rules/skills/agents-md-lint + init + release', () => {
+    ['ext: memory (.cac/rules/AGENTS.md iron laws, archive, syncFindings) + rules/skills/agents-md-lint + init + release', () => {
       const laws = extractIronLaws('[十条核心铁律——每条写明谁在守]\n    1. **主 Agent 不写码**：闸守\n[审批三档]\n    - **LOW**：直接跑\n');
       assert.deepEqual(laws, ['主 Agent 不写码']);
       assert.ok(isTrackedWork('.cac/hooks/stop-gate.mjs'));
-      assert.ok(isTrackedWork('AGENTS.md'));
+      assert.ok(isTrackedWork('.cac/rules/AGENTS.md'));
       assert.ok(!isTrackedWork('.cac/.runtime/tier.json'));
       const sf = syncFindings(['src/a.mjs', 'Product-Spec.md'], { progressPresent: true, specPresent: true, changelogPresent: true });
       assert.equal(sf.length, 2);

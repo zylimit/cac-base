@@ -783,7 +783,7 @@ function riskFindings({
       severity: 'warning', code: 'GOVERNANCE_SURFACE_CHANGED', count: governance.length,
       files: governance.slice(0, GOVERNANCE_LIST_CAP),
       message: 'this change edits ' + governance.length + ' file(s) of the governance surface '
-        + '(hooks, harness, skills, agents, rules, AGENTS.md, CI) -- the judge rather than the '
+        + '(hooks, harness, skills, agents, rules/.cac/rules/AGENTS.md, CI) -- the judge rather than the '
         + 'judged; review it at the strictest tier this repository has, because a gate cannot '
         + 'catch a change to itself',
     });

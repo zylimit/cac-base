@@ -224,7 +224,7 @@ export function classifyChange(rawPath) {
   if (/(^|\/)\.cac\/settings\.local\.json$/.test(p) || /(^|\/)signals\.jsonl$/.test(p)) {
     return 'ignore';
   }
-  if (/\.(sh|ps1|mjs|cjs|ts|tsx|js|jsx|py|css|go|rs|java|kt|cs)$/.test(p) || /(^|\/)\.cac\//.test(p) || p === 'AGENTS.md') {
+  if (/\.(sh|ps1|mjs|cjs|ts|tsx|js|jsx|py|css|go|rs|java|kt|cs)$/.test(p) || /(^|\/)\.cac\//.test(p)) {
     return 'code';
   }
   return 'other';

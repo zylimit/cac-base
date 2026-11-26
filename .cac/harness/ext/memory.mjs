@@ -19,7 +19,8 @@ import { REQUIREMENT_SECTION, parseRequirements, sectionNamed, splitSections } f
 // ===========================================================================
 const DEFAULT_PROGRESS_FILE = 'progress.md';
 const DEFAULT_ARCHIVE_FILE = 'progress.archive.md';
-const DEFAULT_RULES_FILE = 'AGENTS.md';
+const DEFAULT_RULES_FILE = '.cac/rules/AGENTS.md';
+const LEGACY_RULES_FILE = 'AGENTS.md';
 const DEFAULT_SPEC_FILE = 'Product-Spec.md';
 const DEFAULT_CHANGELOG_FILE = 'Product-Spec-CHANGELOG.md';
 
@@ -138,7 +139,7 @@ function renderView(header, blocks, budget) {
 // S21.3 invariants
 // ===========================================================================
 /**
- * Extract iron laws from AGENTS.md:
+ * Extract iron laws from .cac/rules/AGENTS.md (or fallback AGENTS.md):
  * 1) Any bullet/numbered item whose bold label explicitly contains `铁律` (`IRON_LAW_MARK`).
  * 2) Numbered/bulleted bold items under an explicit `[...铁律...]` or `## ...铁律...` section heading.
  */
@@ -236,9 +237,17 @@ function stateLines(state) {
 
 function cmdInvariants(flags = {}) {
   const budget = positiveInt(flags.budget, INVARIANTS_BUDGET);
-  const rulesRel = typeof flags.rules === 'string' ? flags.rules : DEFAULT_RULES_FILE;
+  const explicitRules = typeof flags.rules === 'string';
+  let rulesRel = explicitRules ? flags.rules : DEFAULT_RULES_FILE;
   const progressRel = typeof flags.file === 'string' ? flags.file : DEFAULT_PROGRESS_FILE;
-  const rules = readMemoryFile(rulesRel);
+  let rules = readMemoryFile(rulesRel);
+  if (!rules.ok && !explicitRules && rules.error === 'missing') {
+    const fallback = readMemoryFile(LEGACY_RULES_FILE);
+    if (fallback.ok) {
+      rulesRel = LEGACY_RULES_FILE;
+      rules = fallback;
+    }
+  }
   const progress = readMemoryFile(progressRel);
 
   const laws = rules.ok ? extractIronLaws(rules.text) : [];
@@ -496,7 +505,7 @@ function isTrackedWork(p) {
   if (n === DEFAULT_PROGRESS_FILE || n === DEFAULT_ARCHIVE_FILE) return false;
   const ext = path.extname(n).toLowerCase();
   if (SOURCE_EXTS.has(ext) || EXTRA_SOURCE_EXTS.has(ext)) return true;
-  return n === '.cac' || n.startsWith('.cac/') || n.includes('/.cac/') || n === 'AGENTS.md';
+  return n === '.cac' || n.startsWith('.cac/') || n.includes('/.cac/') || n === DEFAULT_RULES_FILE;
 }
 
 function syncFindings(paths, present) {

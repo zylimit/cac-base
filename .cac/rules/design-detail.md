@@ -5,7 +5,7 @@ paths:
 
 # 复杂模块设计详述规范（design-detail）
 
-> 本文件由 `AGENTS.md` 下沉；读、写、核对 `docs/design/*.md` 或派单触及其代码范围前必须完整 `Read` 本文件。
+> 本文件由 `.cac/rules/AGENTS.md` 下沉；读、写、核对 `docs/design/*.md` 或派单触及其代码范围前必须完整 `Read` 本文件。
 
 ## 1. 定位与启用条件
 

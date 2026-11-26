@@ -8,7 +8,7 @@
     始终用**中文**交流；答完当前问题就主动引导下一步。
 
 [强制细则读取协议——必守！]
-    `codeagent` 宿主不会按路径自动注入 `.cac/rules/*.md`——**主控命中下方任一场景时，必须先调 `Read` 完整读取对应细则文件再行动，严禁凭指针猜测内容**：
+    `codeagent` 宿主仅在启动时自动注入无 `paths:` 头的常驻规则（如本宪法 `.cac/rules/AGENTS.md`），不会按路径自动注入带 `paths:` 的下沉细则——**主控命中下方任一场景时，必须先调 `Read` 完整读取对应细则文件再行动，严禁凭指针猜测内容**：
     - 执行需求 / 架构 / DFX / 设计 / 计划 / 开发 / 发布任一阶段前 → 先 `Read .cac/rules/dev-workflow-details.md`
     - 派发任何 Sub-Agent 或验收回执前 → 先 `Read .cac/rules/subagent-dispatch.md`
     - 生成或核对项目目录结构前 → 先 `Read .cac/rules/file-structure.md`
@@ -28,9 +28,9 @@
 [十条核心铁律——每条写明谁在守]
     1. **主 Agent 不亲自编码 / 审查 / 测试 / 部署**：编码=`implementer`，审查=`code-reviewer`，测试=`tester`（必须与该代码作者不同实例），部署=`deployer`。**闸**：`no-direct-code-guard`（拦截主 Agent 写 `src/` 等业务源码，凭 `agent_type` 放行写码子代理）。
     2. **验收以客观证据为准（永不假绿）**：子代理自报 `DONE` 只代表它跑完了；degraded（`exit 3`）、空计划（`BLOCKED`）、全 `SKIPPED`（`BLOCKED`）都不是 PASS。出口前走五步：定证明命令 → 跑全新全量 → 读完整输出与退出码 → 确认输出真支持结论 → 再报完成。禁说「应该 / 大概 / 看起来」。**靠自觉** + `subagent-bookkeeping` 提醒/校验。
-    3. **查证后再结论**：涉及 CLI、外部库、API、框架版本或配置根因，先查官方文档/WebSearch 或实跑命令验证再下结论。**靠自觉**。
+    3. **查证后再结论**：涉及 CLI、外部库、API、框架版本或配置根因，先查官方文档/WebSearch 或实跑命令验证再下结论；涉及异构宿主/CLI/IDE 规则或目录约定，必须先调搜索引擎查官方文档并跑真机探针实测，严禁凭单一宿主经验类推臆断。**靠自觉**。
     4. **远端与生产实况当场实查**：删/改/重启/重跑远端前先查当前实况，不拿旧快照推断；被拒/中断/超时的远程调用一律按「可能已执行」先实查再决定重发；性能问题先实测再给方案。**靠自觉**。
-    5. **存量家底保留复用**：`.cac/hooks` / `skills` / `agents` / `rules` / `AGENTS.md` 一律保留复用+增量补缺；删/停/重写现有件必须先给理由由用户拍板。**闸**：家底路径一动，本轮自动升 `strict` 档。
+    5. **存量家底保留复用**：`.cac/hooks` / `skills` / `agents` / `rules`（含主控宪法 `.cac/rules/AGENTS.md`）一律保留复用+增量补缺；删/停/重写现有件必须先给理由由用户拍板。**闸**：家底路径一动，本轮自动升 `strict` 档。
     6. **三文件同步与活文档只放现行**：决策（三要素：依据/适用范围/取代哪条）进 `progress.md` Decisions，完成进 Done，硬约束进 Pinned；需求变更 `Product-Spec.md` 与 `Product-Spec-CHANGELOG.md` 成对改；存在即维护、不强造。**闸**：`three-file-sync-gate`（含 `design-detail-sync` 子闸，`strict` 拦）。
     7. **用户当前指令优先，安全地板绝无旁路**：用户明确指定范围或豁免时按当前指令办，但 `security / safety / privacy` 受保护属性与安全地板不可豁免。**闸**：`secret-exfil-guard` / `dangerous-command-guard` / `release-gate` / `.cac/settings.json permissions.deny`（任何档位永远生效）。
     8. **纠正当场落地 + 回显**：用户纠正后三步同做——① 应用到当前产物与 `progress.md` Decisions；② 派 `feedback-observer` 去重记录；③ 向用户回显「这次纠正改了 X 文件 Y 段」。**闸**：`detect-feedback-signal`（注入提醒 + 信号入队）。
@@ -46,7 +46,7 @@
     配置表在 `.cac/harness/profile.json`，唯一解析器在 `.cac/hooks/lib/tier.mjs`，默认 `standard`。
     命令：`node .cac/harness/harness.mjs tier status | explain <hook-id> | validate`；`tier set fast --hours N --reason "..."`（硬上限 8h 自动回落）或 `tier set fast --sticky --reason "..."`（连续开发直至 `tier set standard` 撤销）。
     - **地板闸（永不降级）**：`secret-exfil-guard` / `dangerous-command-guard` / `release-gate` / `postcompact-reinject`。
-    - **自动升档**：工作树修改 `.cac/{hooks,harness,skills,agents,rules}/**`、`.cac/settings.json`、`AGENTS.md`、`.github/**` 任一路径，本轮自动升 `strict`，提交后回落。
+    - **自动升档**：工作树修改 `.cac/{hooks,githooks,harness,skills,agents,rules}/**`（含 `.cac/rules/AGENTS.md`）、`.cac/settings.json`、`.github/**` 任一路径，本轮自动升 `strict`，提交后回落。
     - **档位语义**：`standard` 下 `no-direct-code-guard`/`pre-commit-check`/`precompact-gate` 硬拦，`stop-gate`/`tdd-gate`/`three-file-sync-gate` 提醒；`strict` 下全部升级硬拦（含 `SubagentStop` 信封校验）；`fast` 下仅提醒记账（`stop-gate` 关提醒但 `mark-review-needed` 照记账，发版装配在 `fast` 下直接 FAIL）。
 
 [Skill 路由表]

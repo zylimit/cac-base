@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // scan-instructions.mjs — 指令文件注入、端点篡改、隐藏字符与绕闸诱导独立哨兵（零外部依赖）。
 //
-// 扫描范围：AGENTS.md、.cac/rules/*.md、.cac/harness/ext/rules/*.md、skills/*/SKILL.md、
-//           .cac/agents/*.md、.cac/settings(.local).json 及常见跨工具指令文件。
+// 扫描范围：.cac/rules/AGENTS.md、.cac/rules/*.md、.cac/harness/ext/rules/*.md、skills/*/SKILL.md、
+//           .cac/agents/*.md、.cac/settings(.local).json 及常见跨工具指令文件（含子模块或异构根 AGENTS.md）。
 // 支持 `--staged`（从 git index 读取真实暂存字节）、`--paths a,b`、`--json`。
 // 自动兼容 CRLF（\r\n 归一后再按行扫描）与 UTF-8 BOM。
 
@@ -86,16 +86,31 @@ function gitFileList(staged) {
     }
     const tracked = gitExec(['-c', 'core.quotePath=false', 'ls-files', '-z'], { encoding: 'utf8' })
       .split(NUL).map(toPosix).filter(Boolean);
+    const deleted = new Set(
+      gitExec(['-c', 'core.quotePath=false', 'ls-files', '--deleted', '-z'], { encoding: 'utf8' })
+        .split(NUL).map(toPosix).filter(Boolean),
+    );
     const untracked = gitExec(['-c', 'core.quotePath=false', 'ls-files', '-z', '--others', '--exclude-standard'], { encoding: 'utf8' })
       .split(NUL).map(toPosix).filter(Boolean);
     const seen = new Set();
     const outList = [];
     for (const f of tracked.concat(untracked)) {
-      if (!seen.has(f)) { seen.add(f); outList.push(f); }
+      if (!deleted.has(f) && !seen.has(f)) { seen.add(f); outList.push(f); }
     }
     return outList;
   } catch (_e) {
     return null;
+  }
+}
+
+function gitIndexSet() {
+  try {
+    return new Set(
+      gitExec(['-c', 'core.quotePath=false', 'ls-files', '-z'], { encoding: 'utf8' })
+        .split(NUL).map(toPosix).filter(Boolean),
+    );
+  } catch (_e) {
+    return new Set();
   }
 }
 
@@ -256,7 +271,7 @@ const missingPaths = [];
 if (absPaths !== null) {
   candidates = root === null ? rawPaths.map(toPosix) : absPaths.map((p) => toRepoRelative(root, p) || toPosix(p));
   source = fromIndex ? 'staged+paths' : 'paths';
-  const idx = fromIndex ? new Set(gitFileList(false) || []) : null;
+  const idx = fromIndex ? gitIndexSet() : null;
   const present = [];
   for (const p of candidates) {
     if (fromIndex ? idx.has(p) : fs.existsSync(p)) present.push(p);

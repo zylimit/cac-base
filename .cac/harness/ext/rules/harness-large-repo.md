@@ -5,11 +5,11 @@ paths:
 
 # 大仓治理引擎规范（harness-large-repo）
 
-> 本文件由 `AGENTS.md` 下沉，随 `--with-harness`（Windows `-WithHarness`）装入 `.cac/rules/harness-large-repo.md`；主控触及大仓治理或 `.cac/harness/module-catalog.json` 存在时必须先完整 `Read` 本文件再行动。
+> 本文件由 `.cac/rules/AGENTS.md` 下沉，随 `--with-harness`（Windows `-WithHarness`）装入 `.cac/rules/harness-large-repo.md`；主控触及大仓治理或 `.cac/harness/module-catalog.json` 存在时必须先完整 `Read` 本文件再行动。
 
 ## 1. 启用条件（两件事齐备才启用）
 
-1. 先运行 `./setup.sh --with-harness`（Windows PowerShell：`pwsh -File setup.ps1 -WithHarness`）安装 `.cac/harness/ext/` 扩展包与大仓规则；
+1. 先运行 `<cac-base>/setup.sh --with-harness <target>`（Windows：`pwsh -File <cac-base>\setup.ps1 -Target <target> -WithHarness`）安装 `.cac/harness/ext/` 扩展包与大仓规则；
 2. 再放置合规的 `.cac/harness/module-catalog.json`（可用 `node .cac/harness/harness.mjs init` 推断草案，人工审定 `riskTier`、`attributes`、`dependsOn`、`forbiddenDependencies` 后 `--apply` 落盘并跑 `catalog-lint` 校验）。
 3. **默认透明**：无 `module-catalog.json` 时大仓定向闸默认关闭，小项目零负担；若放置了 `module-catalog.json` 却未装 `.cac/harness/ext/`，`doctor.mjs` 直接判红点名自相矛盾，大仓子命令统一返回 `rc 3`（`degraded`）绝不假绿。
 

@@ -42,6 +42,7 @@
     ".cac/tests/**",
     ".cac/research/**",
     ".cac/agent-memory/**",
+    ".cac/local/**",
     ".cac/worktrees/**",
     ".cac/feedback/*.md",
     ".cac/EVOLUTION.md",
@@ -61,9 +62,7 @@
     "tests": ".cac/tests",
     "harness": ".cac/harness/ext"
   },
-  "seededRootFiles": [
-    "AGENTS.md"
-  ],
+  "seededRootFiles": [],
   "templateInitFiles": [
     {
       "template": ".cac/feedback/templates/feedback-index-template.md",

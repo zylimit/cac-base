@@ -6,7 +6,8 @@
 //   - .json                    → JSON.parse（兼容 UTF-8 BOM）
 //   - .sh 与 .cac/githooks/*   → sh -n / bash -n（缺失则标记 skippedClasses → rc 3）
 //   - .ps1                     → pwsh / powershell Language.Parser（缺失则标记 skippedClasses → rc 3）
-//   - SKILL.md / agents / rules → YAML frontmatter 严谨子集校验（完整兼容 \r?\n CRLF）
+//   - SKILL.md / agents       → 强制要求 YAML frontmatter 严谨子集校验（完整兼容 \r?\n CRLF）
+//   - .cac/rules & ext/rules  → YAML frontmatter 可选（无头视为常驻自动注入规则；有头校验语法，且 .cac/rules/AGENTS.md 严禁包含任何 YAML frontmatter）
 // 支持 `--staged`（从 git 索引物化临时文件检验真实暂存字节）、`--paths a,b`、`--json`。
 
 import fs from 'node:fs';
@@ -101,16 +102,31 @@ function gitFileList(staged) {
     }
     const tracked = gitExec(['-c', 'core.quotePath=false', 'ls-files', '-z'], { encoding: 'utf8' })
       .split(NUL).map(toPosix).filter(Boolean);
+    const deleted = new Set(
+      gitExec(['-c', 'core.quotePath=false', 'ls-files', '--deleted', '-z'], { encoding: 'utf8' })
+        .split(NUL).map(toPosix).filter(Boolean),
+    );
     const untracked = gitExec(['-c', 'core.quotePath=false', 'ls-files', '-z', '--others', '--exclude-standard'], { encoding: 'utf8' })
       .split(NUL).map(toPosix).filter(Boolean);
     const seen = new Set();
     const outList = [];
     for (const f of tracked.concat(untracked)) {
-      if (!seen.has(f) && !isRuntimeRel(f)) { seen.add(f); outList.push(f); }
+      if (!deleted.has(f) && !seen.has(f) && !isRuntimeRel(f)) { seen.add(f); outList.push(f); }
     }
     return outList;
   } catch (_e) {
     return null;
+  }
+}
+
+function gitIndexSet() {
+  try {
+    return new Set(
+      gitExec(['-c', 'core.quotePath=false', 'ls-files', '-z'], { encoding: 'utf8' })
+        .split(NUL).map(toPosix).filter(Boolean),
+    );
+  } catch (_e) {
+    return new Set();
   }
 }
 
@@ -172,7 +188,7 @@ let source;
 if (absPaths !== null) {
   files = root === null ? rawPaths.map(toPosix) : absPaths.map((p) => toRepoRelative(root, p) || toPosix(p));
   source = fromIndex ? 'staged+paths' : 'paths';
-  const idx = fromIndex ? new Set(gitFileList(false) || []) : null;
+  const idx = fromIndex ? gitIndexSet() : null;
   const present = [];
   for (const p of files) {
     if (fromIndex ? idx.has(p) : fs.existsSync(p)) present.push(p);
@@ -199,7 +215,7 @@ const ps1Files = files.filter((f) => /\.ps1$/i.test(f));
 const fmFiles = files.filter((f) =>
   /(^|\/)skills?\/[^/]+\/SKILL\.md$/i.test(f)
   || /(^|\/)\.cac\/agents\/[^/]+\.md$/i.test(f)
-  || /(^|\/)\.cac\/rules\/[^/]+\.md$/i.test(f));
+  || /(^|\/)\.cac\/(?:harness\/ext\/)?rules\/[^/]+\.md$/i.test(f));
 
 let stagedDir = null;
 let stagedSeq = 0;
@@ -548,6 +564,11 @@ function frontmatterCheck(rawText) {
   return null;
 }
 
+function hasYamlFrontmatterHeader(rawText) {
+  const text = String(rawText ?? '').replace(/^\uFEFF/, '');
+  return /^---(?:[ \t]*\r?\n|[ \t]*$)/.test(text);
+}
+
 for (const f of fmFiles) {
   let text;
   try {
@@ -556,10 +577,36 @@ for (const f of fmFiles) {
     failures.push({ file: f, kind: 'frontmatter', error: 'unreadable: ' + oneLine((e && e.code) || e).slice(0, 120) });
     continue;
   }
-  const problem = frontmatterCheck(text);
-  if (!problem) continue;
-  if (problem.kind === 'undecidable') undecidable.push({ file: f, kind: 'frontmatter', reason: problem.reason });
-  else failures.push({ file: f, kind: 'frontmatter', error: problem.reason });
+  const cleanText = String(text).replace(/^\uFEFF/, '');
+  const isRuleFile = /(^|\/)\.cac\/(?:harness\/ext\/)?rules\/[^/]+\.md$/i.test(f);
+  const isMainAgentsRule = /(^|\/)\.cac\/rules\/AGENTS\.md$/i.test(f);
+
+  // .cac/rules/AGENTS.md must NEVER contain any YAML frontmatter header (aligned with HOST-CONTRACT §2).
+  if (isMainAgentsRule) {
+    if (hasYamlFrontmatterHeader(cleanText)) {
+      failures.push({
+        file: f,
+        kind: 'frontmatter',
+        error: '.cac/rules/AGENTS.md must not contain YAML frontmatter (including paths: or any "---" header; must stay pure Markdown for host startup auto-injection)',
+      });
+    }
+    continue;
+  }
+
+  // .cac/rules/*.md and .cac/harness/ext/rules/*.md have optional YAML frontmatter:
+  // headerless files are valid always-on rules auto-injected by codeagent at session start.
+  if (isRuleFile && !hasYamlFrontmatterHeader(cleanText)) {
+    continue;
+  }
+
+  const problem = frontmatterCheck(cleanText);
+  if (problem && problem.kind === 'error') {
+    failures.push({ file: f, kind: 'frontmatter', error: problem.reason });
+    continue;
+  }
+  if (problem && problem.kind === 'undecidable') {
+    undecidable.push({ file: f, kind: 'frontmatter', reason: problem.reason });
+  }
 }
 
 cleanupStaged();

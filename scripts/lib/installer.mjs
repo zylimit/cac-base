@@ -215,14 +215,6 @@ export function planInstall(srcRoot, targetDir, opts = {}) {
   if (!coreManifest) {
     coreManifest = buildCoreManifest(srcRoot);
   }
-  // Ensure seeded AGENTS.md metadata is available even if a manifest lacked `seeded`.
-  if (!Array.isArray(coreManifest.seeded) || coreManifest.seeded.length === 0) {
-    const srcAgents = path.join(srcRoot, 'AGENTS.md');
-    if (fs.existsSync(srcAgents)) {
-      const { sha256, bytes } = hashLfFile(srcAgents);
-      coreManifest = { ...coreManifest, seeded: [{ path: 'AGENTS.md', sha256, bytes }] };
-    }
-  }
 
   const { filesMap: oldCoreMap, seededMap: oldSeedMap } = readManifestMaps(
     path.join(targetDir, MANIFEST_REL_PATH),
@@ -233,7 +225,7 @@ export function planInstall(srcRoot, targetDir, opts = {}) {
 
   const ops = [];
 
-  // 1. Root AGENTS.md (seeded strategy)
+  // 1. Optional seeded root files (empty by default; cac-base constitution lives in .cac/rules/AGENTS.md)
   for (const seed of coreManifest.seeded || []) {
     if (NEVER_INSTALL_ROOT.has(seed.path)) continue;
     const srcFull = path.join(srcRoot, seed.path);

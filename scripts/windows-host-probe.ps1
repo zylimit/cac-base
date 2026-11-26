@@ -2,7 +2,7 @@
 # scripts/windows-host-probe.ps1 - Reusable Windows PowerShell sandbox probe for CodeAgent CLI (`codeagent`).
 # Verifies all host protocol contracts recorded in docs/HOST-CONTRACT.md inside an isolated temp sandbox:
 #   1. CLI executable discovery (`codeagent` -> `codeAgentCLI` -> `codeagentcli` -> `cac`) & version/flags
-#   2. Root `AGENTS.md` automatic context injection vs `.cac/rules/*.md` `paths:` non-auto-injection
+#   2. Headerless `.cac/rules/AGENTS.md` automatic context injection (zero root .md files) vs `.cac/rules/*.md` `paths:` non-auto-injection
 #   3. `.cac/settings.json` `permissions.deny` native pre-hook enforcement
 #   4. String-form Node Hook (`node .cac/hooks/probe-hook.mjs`) execution, stdin payload & env metadata
 #   5. Sub-agent (`Agent` tool) `agent_id` & `agent_type` propagation in PreToolUse/PostToolUse/SubagentStop
@@ -81,8 +81,8 @@ function Write-Utf8NoBom([string]$FilePath, [string]$Text) {
 }
 
 try {
-  # 1. Populate sandbox files
-  Write-Utf8NoBom (Join-Path $sandboxRoot 'AGENTS.md') @'
+  # 1. Populate sandbox files (zero root .md files; headerless .cac/rules/AGENTS.md auto-injects at session start)
+  Write-Utf8NoBom (Join-Path $sandboxRoot '.cac/rules/AGENTS.md') @'
 # Sandbox Constitution
 When asked for the constitution token, always include literal `[AGENTS-MD-OK]` in your reply.
 '@
@@ -256,7 +256,7 @@ if (
   if (-not $SetupOnly -and $cli.found) {
     Push-Location -LiteralPath $sandboxRoot
     try {
-      $prompt = 'Read src/hello.txt and state the constitution token from AGENTS.md in one short line.'
+      $prompt = 'Read src/hello.txt and state the constitution token in one short line.'
       $job = Start-Job -ScriptBlock {
         param($exe, $dir, $p)
         Set-Location -LiteralPath $dir

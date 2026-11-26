@@ -127,12 +127,16 @@ function gitFileList(staged) {
     }
     const tracked = gitExec(['-c', 'core.quotePath=false', 'ls-files', '-z'], { encoding: 'utf8' })
       .split(NUL).map(toPosix).filter(Boolean);
+    const deleted = new Set(
+      gitExec(['-c', 'core.quotePath=false', 'ls-files', '--deleted', '-z'], { encoding: 'utf8' })
+        .split(NUL).map(toPosix).filter(Boolean),
+    );
     const untracked = gitExec(['-c', 'core.quotePath=false', 'ls-files', '-z', '--others', '--exclude-standard'], { encoding: 'utf8' })
       .split(NUL).map(toPosix).filter(Boolean);
     const seen = new Set();
     const merged = [];
     for (const f of tracked.concat(untracked)) {
-      if (!seen.has(f) && !isRuntimeRel(f)) {
+      if (!deleted.has(f) && !seen.has(f) && !isRuntimeRel(f)) {
         seen.add(f);
         merged.push(f);
       }
@@ -140,6 +144,17 @@ function gitFileList(staged) {
     return merged;
   } catch (_e) {
     return null;
+  }
+}
+
+function gitIndexSet() {
+  try {
+    return new Set(
+      gitExec(['-c', 'core.quotePath=false', 'ls-files', '-z'], { encoding: 'utf8' })
+        .split(NUL).map(toPosix).filter(Boolean),
+    );
+  } catch (_e) {
+    return new Set();
   }
 }
 
@@ -276,7 +291,7 @@ const notes = [];
 if (absPaths !== null) {
   const relList = absPaths.map((p) => toRepoRelative(workRoot, p) || toPosix(p));
   source = opts.staged ? 'staged+paths' : 'paths';
-  const indexSet = opts.staged ? new Set(gitFileList(false) || []) : null;
+  const indexSet = opts.staged ? gitIndexSet() : null;
   const present = [];
   const missing = [];
   for (const p of relList) {

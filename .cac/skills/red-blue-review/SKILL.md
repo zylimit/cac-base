@@ -25,7 +25,7 @@ argument-hint: "[BASE..HEAD 或 --working]"
 [第一性原则]
     1. **自述不作数，落点才算数**：无论是 Blue 的自证还是 Red 的指控，凡给不出精确 `file:line` 或可复现命令路径的空泛说辞，Judge 一律不予采信。
     2. **一个 Error Finding 绝不被干净 Lens 否决**：哪怕其余三个 Lens 全部零问题，只要任一 Lens（尤其 `security` 或 `windows`）抓到有实证的阻断缺陷，就必须判 `FIX_REQUIRED`，严禁用「整体表现良好」和稀泥放行。
-    3. **删除审计防家底退化**：当改动触及 `.cac/`、`AGENTS.md` 或公共契约时，重点核查证据包中的「删除审计」清单，防止既有安全护栏或业务规则被静默误删。
+    3. **删除审计防家底退化**：当改动触及 `.cac/`（含 `.cac/rules/AGENTS.md`）或公共契约时，重点核查证据包中的「删除审计」清单，防止既有安全护栏或业务规则被静默误删。
     4. **母版零污染**：`.cac/skills/red-blue-review/RED-BLUE-REVIEW.md` 永远保持空白母版，每次审查必须先复制到 `.cac/.runtime/red-blue-review-<标识>.md`（或系统临时目录）再读写。
 
 [四步对抗工作流]

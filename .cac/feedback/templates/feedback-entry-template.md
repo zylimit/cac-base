@@ -4,7 +4,7 @@ description: "[一句话摘要——用于索引快速扫描]"
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 occurrences: 1                 # 同主题再次触发时递增（必填）
-graduated: false               # 晋升进 AGENTS.md / rules / skills 后改 true（必填）
+graduated: false               # 晋升进 .cac/rules/AGENTS.md / rules / skills 后改 true（必填）
 skipped: false                 # 经用户确认跳过或暂不成文时改 true
 origin: local                  # 本项目自产填 local；collect-feedback.mjs 汇总下游时填下游目录名
 source_skill: "[skill-name 或 N/A]"

@@ -7,12 +7,12 @@ description: 当会话触发进化催办或用户要求扫描规则毕业与技�
     扫描 `.cac/feedback/` 中尚未毕业的行为修正记录，通过**现有框架文本 Grep 查重 + 同族失败模式聚类 + 真实事故代价门槛**，识别三类进化提案（规则毕业 / Skill 段落优化 / 新 Skill 候选），经用户逐条拍板后落地并记入 `.cac/EVOLUTION.md` 台账。
 
 [运行位置分流（防下游升级冲突！）]
-    - **在框架源仓（`cac-base`）运行**：若需汇总下游项目经验，先由主 Agent 运行 `node .cac/scripts/collect-feedback.mjs <下游项目路径...>` 收集条目（带 `origin` 来源），毕业提案直接落入本仓 `AGENTS.md`、`.cac/rules/*.md` 或 `.cac/skills/*/SKILL.md`。
+    - **在框架源仓（`cac-base`）运行**：若需汇总下游项目经验，先由主 Agent 运行 `node .cac/scripts/collect-feedback.mjs <下游项目路径...>` 收集条目（带 `origin` 来源），毕业提案直接落入本仓 `.cac/rules/AGENTS.md`、`.cac/rules/*.md` 或 `.cac/skills/*/SKILL.md`。
     - **在下游业务项目运行**：下游项目的 `.cac/{rules,skills,agents}` 受 `FRAMEWORK-MANIFEST.json` 校验管理，直接涂改会在下次升级时产生冲突——因此通用 AI 方法类教训只标「待回流 `cac-base`」保留在 `.cac/feedback/`，仅项目私有约束落入 `progress.md` Pinned/Decisions 或 `domain/`。
 
 [四步只读扫描规程（由 `evolution-runner` 执行）]
     1. **筛选待裁定候选**：读取 `.cac/feedback/FEEDBACK-INDEX.md` 与各条目 frontmatter，筛选 `graduated: false` 且 `skipped != true` 的条目。
-    2. **现状查重（Grep 实证，严禁凭印象）**：对每条候选在 `AGENTS.md`、`.cac/rules/*.md`、`.cac/skills/*/SKILL.md`、`.cac/agents/*.md` 中检索核心规则是否已成文：
+    2. **现状查重（Grep 实证，严禁凭印象）**：对每条候选在 `.cac/rules/AGENTS.md`、`.cac/rules/*.md`、`.cac/skills/*/SKILL.md`、`.cac/agents/*.md` 中检索核心规则是否已成文：
        - 已完整成文 → 列为「既成事实核销」（附精确 `file:line`，直接标毕业不重复加字）；
        - 部分成文 → 指明已覆盖处与缺失切口；
        - 完全未成文 → 进入下一步实证门槛评估。

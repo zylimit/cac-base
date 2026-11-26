@@ -1,4 +1,5 @@
 // # risk: high
+import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -95,12 +96,16 @@ test('scan-instructions detects zero-width hidden characters, prompt injection, 
     const noVerifyFlag = '--no-' + 'verify';
     const ignorePhrase = ['ignore', 'all', 'previous', 'instructions'].join(' ');
 
-    // Prohibitive governance rules must pass cleanly
+    // Prohibitive governance rules in .cac/rules/AGENTS.md and external root AGENTS.md must pass cleanly
     writeFiles(dir, {
-      'AGENTS.md': [
-        '# Project Constitution',
+      '.cac/rules/AGENTS.md': [
+        '# cac-base 主控宪法',
         `- 严禁使用 ${noVerifyFlag} 绕过提交门禁。`,
         `- Never ${ignorePhrase} from system safety rules.`,
+      ].join('\n') + '\n',
+      'AGENTS.md': [
+        '# External Project Constitution',
+        `- Do not use ${noVerifyFlag} to skip checks.`,
       ].join('\n') + '\n',
     });
     const cleanRes = runNode(SCAN_INSTRUCTIONS, ['--json'], { cwd: dir });
@@ -193,6 +198,223 @@ test('[Red-lock CRLF] check-syntax accepts Windows CRLF (\\r\\n) YAML frontmatte
     );
     assert.equal(badRes.status, 1);
     assert.equal((badRes.json?.failures || []).length, 2);
+  } finally {
+    cleanupTmp(dir);
+  }
+});
+
+test('[Red-lock HOST-CONTRACT §2] check-syntax allows headerless .cac/rules/AGENTS.md, blocks paths: frontmatter on .cac/rules/AGENTS.md (LF & \\r\\n CRLF, tracked & --staged), and still requires frontmatter on .cac/skills/*/SKILL.md & .cac/agents/*.md', () => {
+  const dir = mkTmpRepo({ withProfile: false, withSettings: false });
+  try {
+    // 1. Headerless .cac/rules/AGENTS.md (both LF and CRLF) + valid .cac/skills/*/SKILL.md pass with failures=0
+    const cleanAgentsRule = [
+      '# AGENTS.md — cac-base 主控宪法',
+      '',
+      '[角色]',
+      '    你是 SiteMaster，无 YAML frontmatter 以确保宿主启动原生自动注入。',
+    ].join('\r\n') + '\r\n';
+
+    const validSkill = [
+      '---',
+      'name: valid-skill',
+      'description: Skill with valid frontmatter.',
+      '---',
+      '',
+      '# Valid Skill',
+    ].join('\n') + '\n';
+
+    writeFiles(dir, {
+      '.cac/rules/AGENTS.md': cleanAgentsRule,
+      '.cac/skills/valid-skill/SKILL.md': validSkill,
+    });
+
+    const passRes = runNode(
+      CHECK_SYNTAX,
+      ['--paths', '.cac/rules/AGENTS.md,.cac/skills/valid-skill/SKILL.md', '--json'],
+      { cwd: dir },
+    );
+    assert.equal(passRes.status, 0, `Headerless .cac/rules/AGENTS.md must pass check-syntax: ${passRes.stdout} ${passRes.stderr}`);
+    assert.equal(passRes.json?.ok, true);
+    assert.equal((passRes.json?.failures || []).length, 0);
+
+    // 2. Adding LF paths: frontmatter to .cac/rules/AGENTS.md MUST fail with exit 1
+    writeFiles(dir, {
+      '.cac/rules/AGENTS.md': [
+        '---',
+        'paths:',
+        '  - "src/**"',
+        '---',
+        '',
+        '# AGENTS.md with forbidden LF paths frontmatter',
+      ].join('\n') + '\n',
+    });
+    const lfFail = runNode(CHECK_SYNTAX, ['--paths', '.cac/rules/AGENTS.md', '--json'], { cwd: dir });
+    assert.equal(lfFail.status, 1, 'LF paths: frontmatter on .cac/rules/AGENTS.md must exit 1');
+    assert.equal(lfFail.json?.ok, false);
+    assert.equal((lfFail.json?.failures || []).length, 1);
+    assert.equal(lfFail.json.failures[0].file, '.cac/rules/AGENTS.md');
+    assert.match(lfFail.json.failures[0].error, /paths:/);
+
+    // 3. Adding Windows CRLF (\r\n) paths: frontmatter (block & inline flow, plus --staged index check) MUST fail with exit 1
+    writeFiles(dir, {
+      '.cac/rules/AGENTS.md': '\uFEFF' + [
+        '---',
+        'paths:',
+        '  - "src/**"',
+        '---',
+        '',
+        '# AGENTS.md with forbidden CRLF paths frontmatter',
+      ].join('\r\n') + '\r\n',
+    });
+    gitIn(dir, ['add', '.cac/rules/AGENTS.md']);
+
+    const crlfPathsFail = runNode(CHECK_SYNTAX, ['--paths', '.cac/rules/AGENTS.md', '--json'], { cwd: dir });
+    assert.equal(crlfPathsFail.status, 1, 'CRLF paths: frontmatter on .cac/rules/AGENTS.md must exit 1');
+    assert.equal((crlfPathsFail.json?.failures || []).length, 1);
+    assert.match(crlfPathsFail.json.failures[0].error, /paths:/);
+
+    const stagedCrlfFail = runNode(CHECK_SYNTAX, ['--staged', '--json'], { cwd: dir });
+    assert.equal(stagedCrlfFail.status, 1, '--staged check-syntax must also block CRLF paths: frontmatter on .cac/rules/AGENTS.md');
+    assert.equal(
+      (stagedCrlfFail.json?.failures || []).some((f) => f.file === '.cac/rules/AGENTS.md' && /paths:/.test(f.error)),
+      true,
+    );
+
+    writeFiles(dir, {
+      '.cac/rules/AGENTS.md': ['---', 'paths: ["**"]', '---', '', '# Inline flow paths'].join('\r\n') + '\r\n',
+    });
+    const inlineFail = runNode(CHECK_SYNTAX, ['--paths', '.cac/rules/AGENTS.md', '--json'], { cwd: dir });
+    assert.equal(inlineFail.status, 1, 'Inline flow paths: ["**"] on .cac/rules/AGENTS.md must exit 1');
+
+    // 4. Restore valid headerless .cac/rules/AGENTS.md, while .cac/skills/*/SKILL.md & .cac/agents/*.md missing frontmatter MUST still fail (exit 1)
+    writeFiles(dir, {
+      '.cac/rules/AGENTS.md': '# AGENTS.md — headerless valid constitution\n',
+      '.cac/skills/missing-fm/SKILL.md': '# Missing Frontmatter Skill\nNo YAML fence at top.\n',
+      '.cac/agents/missing-fm.md': '# Missing Frontmatter Agent\nNo YAML fence at top.\n',
+    });
+    const skillNoFmRes = runNode(
+      CHECK_SYNTAX,
+      ['--paths', '.cac/rules/AGENTS.md,.cac/skills/missing-fm/SKILL.md,.cac/agents/missing-fm.md', '--json'],
+      { cwd: dir },
+    );
+    assert.equal(skillNoFmRes.status, 1, 'SKILL.md / agent.md missing frontmatter must still exit 1');
+    const failedFiles = (skillNoFmRes.json?.failures || []).map((f) => f.file).sort();
+    assert.deepEqual(
+      failedFiles,
+      ['.cac/agents/missing-fm.md', '.cac/skills/missing-fm/SKILL.md'],
+      'Headerless .cac/rules/AGENTS.md must pass while headerless SKILL.md and agent.md fail',
+    );
+  } finally {
+    cleanupTmp(dir);
+  }
+});
+
+test('[Regression] scan-secrets ignores unstaged deleted tracked files without ENOENT (exit 0) while still catching leaks in remaining files', () => {
+  const dir = mkTmpRepo({
+    withProfile: false,
+    withSettings: false,
+    files: {
+      'src/keep.ts': 'export const API = "https://api.acme-cloud.io/v1";\n',
+      'src/deleted-unstaged.ts': 'export const GONE = "https://api.acme-cloud.io/v2";\n',
+    },
+  });
+  try {
+    // Delete tracked file directly in working tree WITHOUT staging (`git rm`)
+    fs.unlinkSync(path.join(dir, 'src', 'deleted-unstaged.ts'));
+    const tracked = gitIn(dir, ['ls-files']).stdout;
+    assert.match(tracked, /src\/deleted-unstaged\.ts/, 'precondition: file remains tracked in git index');
+
+    // Non-staged scan-secrets MUST exit 0 (not exit 3 degraded due to ENOENT)
+    const resJson = runNode(SCAN_SECRETS, ['--json'], { cwd: dir });
+    assert.equal(
+      resJson.status,
+      0,
+      `scan-secrets must not fail with ENOENT/rc 3 on unstaged deleted tracked file: ${resJson.stdout} ${resJson.stderr}`,
+    );
+    assert.equal(resJson.json?.ok, true);
+    assert.equal(resJson.json?.counts?.error, 0);
+    assert.equal(resJson.json?.counts?.degraded, 0);
+
+    const resHuman = runNode(SCAN_SECRETS, [], { cwd: dir });
+    assert.equal(resHuman.status, 0);
+
+    // Remaining existing tracked files must still be scanned and blocked when violating rules
+    const plainHttp = 'ht' + 'tp://api.acme-cloud.io/v1/insecure';
+    writeFiles(dir, {
+      'src/keep.ts': `export const BAD = "${plainHttp}";\n`,
+    });
+    const badRes = runNode(SCAN_SECRETS, ['--json'], { cwd: dir });
+    assert.equal(badRes.status, 1, 'scan-secrets must still detect violations in remaining tracked files');
+  } finally {
+    cleanupTmp(dir);
+  }
+});
+
+test('[Regression HOST-CONTRACT §2] check-syntax rejects quoted "paths": keys, arbitrary non-paths YAML frontmatter, and trailing-space CRLF fences (---   \\r\\n) on .cac/rules/AGENTS.md', () => {
+  const dir = mkTmpRepo({ withProfile: false, withSettings: false });
+  try {
+    const forbiddenVariants = [
+      {
+        label: 'double-quoted "paths": flow header (LF)',
+        content: '---\n"paths": ["src/**"]\n---\n\n# Quoted paths key\n',
+      },
+      {
+        label: "single-quoted 'paths': block header (LF)",
+        content: "---\n'paths':\n  - \"src/**\"\n---\n\n# Single-quoted paths key\n",
+      },
+      {
+        label: 'arbitrary non-paths frontmatter (LF)',
+        content: '---\ndescription: x\n---\n\n# Frontmatter without paths\n',
+      },
+      {
+        label: 'double-quoted "paths": with trailing spaces & CRLF (---   \\r\\n)',
+        content: '---   \r\n"paths": ["src/**"]\r\n---   \r\n\r\n# Quoted paths with trailing spaces CRLF\r\n',
+      },
+      {
+        label: 'BOM + non-paths frontmatter with trailing spaces & CRLF (---   \\r\\n)',
+        content: '\uFEFF---   \r\ndescription: x\r\n---   \r\n\r\n# Arbitrary frontmatter with trailing spaces CRLF\r\n',
+      },
+      {
+        label: 'unclosed opening YAML fence with trailing spaces & CRLF',
+        content: '---   \r\ndescription: unclosed\r\n# Body without closing fence\r\n',
+      },
+    ];
+
+    for (const { label, content } of forbiddenVariants) {
+      writeFiles(dir, { '.cac/rules/AGENTS.md': content });
+      const res = runNode(CHECK_SYNTAX, ['--paths', '.cac/rules/AGENTS.md', '--json'], { cwd: dir });
+      assert.equal(
+        res.status,
+        1,
+        `Expected exit 1 for ${label}, got ${res.status}: ${res.stdout} ${res.stderr}`,
+      );
+      assert.equal(res.json?.ok, false);
+      assert.equal(
+        (res.json?.failures || []).some((f) => f.file === '.cac/rules/AGENTS.md'),
+        true,
+        `Expected failure recorded on .cac/rules/AGENTS.md for ${label}`,
+      );
+    }
+
+    // Verify --staged also catches non-paths trailing-space CRLF frontmatter on .cac/rules/AGENTS.md
+    writeFiles(dir, {
+      '.cac/rules/AGENTS.md': '---   \r\ndescription: x\r\n---   \r\n\r\n# Staged check\r\n',
+    });
+    gitIn(dir, ['add', '.cac/rules/AGENTS.md']);
+    const stagedRes = runNode(CHECK_SYNTAX, ['--staged', '--json'], { cwd: dir });
+    assert.equal(stagedRes.status, 1, '--staged check-syntax must reject non-paths trailing-space CRLF frontmatter');
+    assert.equal(
+      (stagedRes.json?.failures || []).some((f) => f.file === '.cac/rules/AGENTS.md'),
+      true,
+    );
+
+    // Pure Markdown headerless .cac/rules/AGENTS.md containing a body thematic break (`---`) must still exit 0
+    writeFiles(dir, {
+      '.cac/rules/AGENTS.md': '# AGENTS.md — Headerless Constitution\r\n\r\nSection 1\r\n\r\n---\r\n\r\nSection 2\r\n',
+    });
+    const cleanBodyHrRes = runNode(CHECK_SYNTAX, ['--paths', '.cac/rules/AGENTS.md', '--json'], { cwd: dir });
+    assert.equal(cleanBodyHrRes.status, 0, `Markdown horizontal rule in body must pass check-syntax: ${cleanBodyHrRes.stdout}`);
+    assert.equal(cleanBodyHrRes.json?.ok, true);
   } finally {
     cleanupTmp(dir);
   }

@@ -59,6 +59,11 @@ function toPosix(p) {
   return String(p ?? '').replace(/\\/g, '/');
 }
 
+function hasYamlFrontmatterHeader(rawText) {
+  const text = String(rawText ?? '').replace(/^\uFEFF/, '');
+  return /^---(?:[ \t]*\r?\n|[ \t]*$)/.test(text);
+}
+
 function hashLfFile(fullPath) {
   const buf = fs.readFileSync(fullPath);
   let hasCr = false;
@@ -266,20 +271,27 @@ export function runDoctor(rawTarget, { jsonMode = false } = {}) {
     ok('安装事务状态干净（无残留 install.marker）');
   }
 
-  // ② AGENTS.md 与 .cac/rules/ 6 核心规则存在
-  const agentsMdPath = path.join(root, 'AGENTS.md');
-  if (fs.existsSync(agentsMdPath) && fs.statSync(agentsMdPath).size > 0) {
-    ok('AGENTS.md 存在');
-  } else {
-    bad('AGENTS.md 缺失或为空');
-  }
-
+  // ② .cac/rules/AGENTS.md 主控宪法（严禁含任何 YAML frontmatter）与 6 核心按需细则存在
   const rulesDir = path.join(root, '.cac', 'rules');
   if (fs.existsSync(rulesDir) && fs.statSync(rulesDir).isDirectory()) {
     ok('.cac/rules 目录存在');
   } else {
     bad('.cac/rules 目录缺失');
   }
+
+  const agentsMdPath = path.join(rulesDir, 'AGENTS.md');
+  let agentsMdText = '';
+  if (fs.existsSync(agentsMdPath) && fs.statSync(agentsMdPath).isFile() && fs.statSync(agentsMdPath).size > 0) {
+    agentsMdText = fs.readFileSync(agentsMdPath, 'utf8');
+    if (hasYamlFrontmatterHeader(agentsMdText)) {
+      bad('.cac/rules/AGENTS.md 不得包含 YAML frontmatter（含 paths: 等任何头部，必须保持纯 Markdown 以确保宿主启动自动注入）');
+    } else {
+      ok('.cac/rules/AGENTS.md 存在（无 YAML frontmatter，启动自动注入）');
+    }
+  } else {
+    bad('.cac/rules/AGENTS.md 缺失或为空');
+  }
+
   for (const r of CORE_RULES) {
     const rp = path.join(rulesDir, `${r}.md`);
     if (fs.existsSync(rp) && fs.statSync(rp).size > 0) {
@@ -289,7 +301,7 @@ export function runDoctor(rawTarget, { jsonMode = false } = {}) {
     }
   }
 
-  // ③ .cac/agents/ 9 个核心角色存在且与 AGENTS.md 调度表双向对齐
+  // ③ .cac/agents/ 9 个核心角色存在且与 .cac/rules/AGENTS.md 调度表双向对齐
   const agentsDir = path.join(root, '.cac', 'agents');
   if (fs.existsSync(agentsDir) && fs.statSync(agentsDir).isDirectory()) {
     ok('.cac/agents 目录存在');
@@ -305,30 +317,29 @@ export function runDoctor(rawTarget, { jsonMode = false } = {}) {
     }
   }
 
-  if (fs.existsSync(agentsMdPath)) {
-    const mdText = fs.readFileSync(agentsMdPath, 'utf8');
+  if (agentsMdText) {
     const regSet = new Set();
     const re = /\.cac\/agents\/([A-Za-z0-9_.-]+)\.md/g;
     let m;
-    while ((m = re.exec(mdText)) !== null) {
+    while ((m = re.exec(agentsMdText)) !== null) {
       regSet.add(m[1]);
     }
     const registered = [...regSet].sort();
     if (registered.length < CORE_AGENTS.length) {
-      bad(`AGENTS.md 调度表仅解析到 ${registered.length} 个角色（至少应含 ${CORE_AGENTS.length} 个核心角色）`);
+      bad(`.cac/rules/AGENTS.md 调度表仅解析到 ${registered.length} 个角色（至少应含 ${CORE_AGENTS.length} 个核心角色）`);
     } else {
       const missingOnDisk = registered.filter((name) => !fs.existsSync(path.join(agentsDir, `${name}.md`)));
       if (missingOnDisk.length === 0) {
-        ok(`agent 名单与 AGENTS.md 调度表一致（已登记 ${registered.length} 个角色）`);
+        ok(`agent 名单与 .cac/rules/AGENTS.md 调度表一致（已登记 ${registered.length} 个角色）`);
       } else {
-        bad(`AGENTS.md 调度表已登记但本地缺失：${missingOnDisk.join(', ')}`);
+        bad(`.cac/rules/AGENTS.md 调度表已登记但本地缺失：${missingOnDisk.join(', ')}`);
       }
       if (fs.existsSync(agentsDir)) {
         for (const ent of fs.readdirSync(agentsDir, { withFileTypes: true })) {
           if (!ent.isFile() || !ent.name.endsWith('.md')) continue;
           const roleName = ent.name.slice(0, -3);
           if (!regSet.has(roleName)) {
-            note(`agent ${roleName} 未登记进 AGENTS.md 调度表（主 Agent 不会自动调度）`);
+            note(`agent ${roleName} 未登记进 .cac/rules/AGENTS.md 调度表（主 Agent 不会自动调度）`);
           }
         }
       }

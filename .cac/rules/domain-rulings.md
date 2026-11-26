@@ -5,7 +5,7 @@ paths:
 
 # 领域口径库规范（domain-rulings）
 
-> 本文件由 `AGENTS.md` 下沉；执行 `/domain-rulings`、裁定 `Domain findings` 或派发 `domain-recorder` 前必须完整 `Read` 本文件。
+> 本文件由 `.cac/rules/AGENTS.md` 下沉；执行 `/domain-rulings`、裁定 `Domain findings` 或派发 `domain-recorder` 前必须完整 `Read` 本文件。
 
 ## 1. 定位与准入两问
 

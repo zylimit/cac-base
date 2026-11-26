@@ -5,7 +5,7 @@ paths:
 
 # Sub-Agent 派发与回执验收契约（subagent-dispatch）
 
-> 本文件由 `AGENTS.md` 下沉；派发任何 Sub-Agent 或验收其回执前必须完整 `Read` 本文件。
+> 本文件由 `.cac/rules/AGENTS.md` 下沉；派发任何 Sub-Agent 或验收其回执前必须完整 `Read` 本文件。
 
 ## 1. 派发形态与隔离原则
 

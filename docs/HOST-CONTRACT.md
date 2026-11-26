@@ -15,11 +15,14 @@
 
 ## 2. 规则、权限与技能加载事实（`[确认]`）
 
-1. **`AGENTS.md` 自动加载**：项目根 `AGENTS.md` 在会话启动时**原生自动注入上下文**（探针暗号 `[AGENTS-MD-OK]` 命中）。
-2. **`.cac/rules/*.md` 的 `paths:` 不自动加载（关键差异！）**：实测读取 `src/hello.txt` 后，`.cac/rules/src-rule.md`（含 `paths: ["src/**"]`）**未被宿主自动注入**。
-   - **落地对策**：保留 `.cac/rules/*.md` 作为模块化细则下沉载体，同时在 `AGENTS.md` 中对每份细则写死**强制前置 `Read` 指针**（执行对应阶段或派单前必须显式 `Read` 对应 `.cac/rules/*.md`），不依赖宿主按路径自动注入。
-3. **`permissions.deny` 原生生效**：`.cac/settings.json` 中 `"Read(.env)"` 等规则在进入 `PreToolUse` 前即由宿主直接拦截（`File is in a directory that is denied by your permission settings.`）。
-4. **`disable-model-invocation: true` 原生生效**：Skill frontmatter 声明 `disable-model-invocation: true` 时，模型自动调 `Skill` 工具会被宿主拒绝（`Permission for this action has been denied`），仅允许用户手动敲 `/skill-name` 调用。
+1. **隐藏目录顶层候选文件不自动加载**：在 Windows 内网真机 PowerShell 沙箱（根目录零 `.md` 文件 + `--disallowedTools "Read Glob Grep Bash"` 禁用全部文件读取与搜索工具）中实测，`.cac/AGENTS.md`、`.cac/CLAUDE.md`、`.cac/CODEAGENT.md` **均不会**被 `codeagent 1.2615.02.05` 自动加载。
+2. **无 `paths:` YAML frontmatter 的 `.cac/rules/*.md` 启动原生自动注入（核心实证！）**：同一禁工具沙箱实测输出 `[HIT-4-CAC-RULES]`（及探针暗号 `[AGENTS-MD-OK]`），证实**不含 `paths:` frontmatter 的 `.cac/rules/*.md` 会在会话启动时被 `codeagent` 原生自动注入系统规则**！
+   - **落地对策（v1.1.0 根目录零文件入侵架构）**：将主控宪法收纳于 **`.cac/rules/AGENTS.md`**（大写 `A` 字典序排在所有小写细则之前，且无 `---` YAML frontmatter、严禁出现 `paths:` 字段，由 `doctor.mjs` 与 `check-syntax.mjs` 双重硬检守护）。默认安装 `cac-base` 后目标项目**根目录零新增文件**（仅创建 `.cac/`），与 `cc-base`（`.claude/`）、`agy-base`、Cursor、Codex 以及业务项目自有的根 `AGENTS.md` 彻底零文件冲突共存；同时 `.cac/rules/AGENTS.md` 纳入 `.cac/FRAMEWORK-MANIFEST.json` 常规受管文件享受三路 LF-SHA256 无损升级（本地改动自动旁落 `.cac/rules/AGENTS.md.cac-base-new`）。
+3. **带 `paths:` YAML frontmatter 的 `.cac/rules/*.md` 不自动加载**：实测读取 `src/hello.txt` 后，`.cac/rules/src-rule.md`（含 `paths: ["src/**"]`）既不会在会话启动时自动注入，也不会在触及匹配路径时自动注入。
+   - **落地对策**：6 份核心细则与 2 份大仓扩展细则保留 `paths:` frontmatter（避免启动时全量灌入浪费上下文），同时在 `.cac/rules/AGENTS.md` 中对每份细则写死**强制前置 `Read` 指针**（执行对应阶段或派单前必须显式 `Read` 对应 `.cac/rules/*.md`）。
+4. **与 `.claude/` 同仓物理绝缘**：通过 `--debug-file` 抓取完整启动扫描日志（`settings`、`loadSkillsDir`、`markdownConfigLoader`、`changeDetector`、`skillChangeDetector` 共 900 行）实测确认，`codeagent` 全程对同目录下的 `.claude/`、`CLAUDE.md`、`.claude/rules/` **0 扫描、0 命中**（同时支持项目私有目录 `.cac/local/{agents,commands}`）。因此 `cac-base`（`.cac/`）与 `cc-base`（`.claude/`，含复用它的 Cursor / Antigravity）可在同一业务仓库物理级绝缘共存（注：若同仓配置 Antigravity，应使用 `.agents/rules/*.md` 而非项目根 `AGENTS.md`，避免被 `codeagent` 连带读取根 `AGENTS.md`）。
+5. **`permissions.deny` 原生生效**：`.cac/settings.json` 中 `"Read(.env)"` 等规则在进入 `PreToolUse` 前即由宿主直接拦截（`File is in a directory that is denied by your permission settings.`）。
+6. **`disable-model-invocation: true` 原生生效**：Skill frontmatter 声明 `disable-model-invocation: true` 时，模型自动调 `Skill` 工具会被宿主拒绝（`Permission for this action has been denied`），仅允许用户手动敲 `/skill-name` 调用。
 
 ## 3. Hook 事件、工具名与 I/O 协议事实（`[确认]`）
 
@@ -61,7 +64,7 @@
 
 | `cc-base` 机制 | `codeagent` 状态 | `cac-base` 原生替代方案 |
 |---|---|---|
-| `.claude/rules/` `paths:` 自动注入 | 不自动注入 | `AGENTS.md` 强制前置指针显式 `Read .cac/rules/*.md` |
+| `.claude/rules/` `paths:` 自动注入 | 带 `paths:` 头不自动注入；无 `paths:` 头的 `.cac/rules/*.md` 启动自动注入 | 主控宪法放无头的 `.cac/rules/AGENTS.md` 启动自动注入；下沉细则带 `paths:` 头并由宪法前置指针显式 `Read` |
 | `Dynamic Workflows` (`code-review-fanout.js`) | CC 专属 | 主 Agent 按维度并行调多次 `Agent(subagent_type: "code-reviewer")` + 主 Agent 汇总裁定（须用户 opt-in） |
 | `UserPromptExpansion` 事件 | 无独立展开事件 | 双重防线：`PreToolUse(Skill)` 匹配 `skill === "release-builder"` + `UserPromptSubmit` 匹配 `/release-builder` |
 | `PostToolUse` `asyncRewake: true` | 无后台唤醒 | 由 `PreToolUse(Bash)` 的 `pre-commit-check` 同步门与 `/gate` 兜底 |

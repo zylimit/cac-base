@@ -16,6 +16,10 @@ export const OPTIONAL_MANIFEST_REL_PATH = '.cac/FRAMEWORK-MANIFEST-OPTIONAL.json
  * Root-level files that must NEVER be copied into a target project under any circumstances.
  */
 export const NEVER_INSTALL_ROOT = new Set([
+  'AGENTS.md',
+  'AGENTS.local.md',
+  'CLAUDE.md',
+  'GEMINI.md',
   'progress.md',
   'progress.archive.md',
   'CHANGELOG.md',
@@ -132,6 +136,7 @@ const COMPILED_MAIN_RULES = CAC_MANIFEST_RULES.map((r) => ({
   re: casePatternToRegExp(r.pattern),
   keep: r.keep,
 }));
+COMPILED_MAIN_RULES.seededRootFiles = [];
 
 const COMPILED_OPTIONAL_EXCLUDES = OPTIONAL_EXCLUDED_PATTERNS.map((p) => casePatternToRegExp(p));
 
@@ -266,9 +271,16 @@ function loadEffectiveRules(root) {
         extra.push({ re: casePatternToRegExp(e.pattern), keep: Boolean(e.keep) });
       }
     }
-    return (keepFirst.length || extra.length)
+    const seededRootFiles = Array.isArray(raw.seededRootFiles)
+      ? raw.seededRootFiles
+          .filter((s) => typeof s === 'string' && s.trim() && !s.includes('/') && !s.includes('\\') && s !== '.' && s !== '..')
+          .map((s) => s.trim())
+      : [];
+    const outRules = (keepFirst.length || extra.length)
       ? [...COMPILED_MAIN_RULES, ...keepFirst, ...extra]
-      : COMPILED_MAIN_RULES;
+      : [...COMPILED_MAIN_RULES];
+    outRules.seededRootFiles = seededRootFiles;
+    return outRules;
   } catch {
     return COMPILED_MAIN_RULES;
   }
@@ -345,10 +357,14 @@ export function buildCoreManifest(root) {
   files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 
   const seeded = [];
-  const agentsPath = path.join(root, 'AGENTS.md');
-  if (fs.existsSync(agentsPath) && fs.statSync(agentsPath).isFile()) {
-    const { sha256, bytes } = hashLfFile(agentsPath);
-    seeded.push({ path: 'AGENTS.md', sha256, bytes });
+  const seededNames = Array.isArray(rules.seededRootFiles) ? rules.seededRootFiles : [];
+  for (const relSeed of seededNames) {
+    if (NEVER_INSTALL_ROOT.has(relSeed)) continue;
+    const seedPath = path.join(root, relSeed);
+    if (fs.existsSync(seedPath) && fs.statSync(seedPath).isFile()) {
+      const { sha256, bytes } = hashLfFile(seedPath);
+      seeded.push({ path: relSeed, sha256, bytes });
+    }
   }
 
   return {
@@ -435,9 +451,13 @@ export function checkManifest(root) {
   const liveSeedMap = new Map((live.seeded || []).map((f) => [f.path, f]));
   for (const [p, lf] of liveSeedMap) {
     const rf = recSeedMap.get(p);
-    if (rf && rf.sha256 !== lf.sha256) {
+    if (!rf) problems.push(`unlisted seeded file on disk: ${p}`);
+    else if (rf.sha256 !== lf.sha256) {
       problems.push(`seeded sha256 drift: ${p} (manifest=${String(rf.sha256).slice(0, 8)} actual=${lf.sha256.slice(0, 8)})`);
     }
+  }
+  for (const p of recSeedMap.keys()) {
+    if (!liveSeedMap.has(p)) problems.push(`missing seeded file on disk: ${p}`);
   }
 
   const code = problems.length > 0 ? 1 : 0;
@@ -687,6 +707,7 @@ function runSelftest() {
   if (isCoreManifestFile('harness/ext/catalog.mjs')) throw new Error('harness/ext/* must be excluded from core manifest');
   if (isCoreManifestFile('tests/run-all.mjs')) throw new Error('tests/* must be excluded from core manifest');
   if (!isCoreManifestFile('hooks/stop-gate.mjs')) throw new Error('hooks/*.mjs must be included in core manifest');
+  if (!isCoreManifestFile('rules/AGENTS.md')) throw new Error('rules/AGENTS.md must be included in core manifest');
 
   // 3. Leak scanner: https:// and wss:// and placeholders MUST NOT false-positive
   const cleanHits = scanTextForLeaks(
