@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "default": "standard",
+  "floor": [
+    "secret-exfil-guard",
+    "dangerous-command-guard",
+    "release-gate",
+    "postcompact-reinject"
+  ],
+  "hooks": {
+    "stop-gate":             { "kind": "guard",    "fast": "off",    "standard": "advise", "strict": "block" },
+    "three-file-sync-gate":  { "kind": "guard",    "fast": "advise", "standard": "advise", "strict": "block" },
+    "design-detail-sync":    { "kind": "guard",    "fast": "advise", "standard": "advise", "strict": "block" },
+    "precompact-gate":       { "kind": "guard",    "fast": "advise", "standard": "block",  "strict": "block" },
+    "pre-commit-check":      { "kind": "guard",    "fast": "advise", "standard": "block",  "strict": "block" },
+    "no-direct-code-guard":  { "kind": "guard",    "fast": "advise", "standard": "block",  "strict": "block" },
+    "tdd-gate":              { "kind": "guard",    "fast": "off",    "standard": "advise", "strict": "block" },
+    "subagent-bookkeeping":  { "kind": "guard",    "fast": "off",    "standard": "advise", "strict": "block" },
+    "mark-review-needed":    { "kind": "recorder", "fast": "on",     "standard": "on",     "strict": "on" },
+    "record-authorship":     { "kind": "recorder", "fast": "on",     "standard": "on",     "strict": "on" },
+    "auto-push":             { "kind": "recorder", "fast": "off",    "standard": "off",    "strict": "off" },
+    "kill-dev-ports":        { "kind": "recorder", "fast": "off",    "standard": "on",     "strict": "on" },
+    "detect-feedback-signal":{ "kind": "recorder", "fast": "off",    "standard": "on",     "strict": "on" },
+    "session-start":         { "kind": "recorder", "fast": "on",     "standard": "on",     "strict": "on" }
+  },
+  "raise": {
+    "to": "strict",
+    "paths": [
+      ".cac/hooks/**",
+      ".cac/githooks/**",
+      ".cac/harness/**",
+      ".cac/skills/**",
+      ".cac/agents/**",
+      ".cac/rules/**",
+      ".cac/settings.json",
+      "AGENTS.md",
+      ".github/**"
+    ]
+  },
+  "overrides": {}
+}

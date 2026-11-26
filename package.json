@@ -1,0 +1,22 @@
+{
+  "name": "cac-base",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Native engineering governance scaffold for CodeAgent CLI (codeagent / .cac) on Windows PowerShell & WSL/Linux.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zylimit/cac-base.git"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "test": "node .cac/tests/run-all.mjs --level high",
+    "test:all": "node .cac/tests/run-all.mjs --level all",
+    "doctor": "node .cac/scripts/doctor.mjs",
+    "manifest": "node scripts/cac-base.mjs manifest --write",
+    "manifest:check": "node scripts/cac-base.mjs manifest --check",
+    "pack-check": "node scripts/cac-base.mjs pack-check"
+  }
+}

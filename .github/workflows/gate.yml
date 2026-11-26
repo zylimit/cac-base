@@ -1,0 +1,261 @@
+name: cac-base gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: gate (${{ matrix.os }}, node ${{ matrix.node }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [22]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Configure git core.autocrlf=false before checkout
+        run: |
+          git config --global core.autocrlf false
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: PowerShell AST & No-BOM verification (.ps1)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $listed = @(
+            'setup.ps1',
+            'scripts/windows-host-probe.ps1'
+          )
+          foreach ($rel in $listed) {
+            if (-not (Test-Path -LiteralPath $rel)) {
+              Write-Error "Missing expected PowerShell script: $rel"
+              exit 1
+            }
+            $full = (Resolve-Path -LiteralPath $rel).Path
+            $bytes = [System.IO.File]::ReadAllBytes($full)
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+              Write-Error "UTF-8 BOM detected in $rel (must be UTF-8 without BOM)"
+              exit 1
+            }
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($full, [ref]$tokens, [ref]$errors)
+            if ($errors -and $errors.Count -gt 0) {
+              Write-Error "PowerShell parse error in ${rel}: $($errors[0].Message)"
+              exit 1
+            }
+          }
+          Write-Host "PowerShell AST & No-BOM check passed ($($listed.Count) files)."
+
+      - name: Installer unit selftests (path-guard / settings-merge / manifest)
+        run: |
+          node scripts/lib/path-guard.mjs --selftest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/lib/settings-merge.mjs --selftest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/lib/manifest.mjs --selftest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Harness engine selftest (core + ext)
+        run: |
+          node .cac/harness/harness.mjs selftest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Audit sentinels (scan-secrets / scan-instructions / check-syntax)
+        run: |
+          node .cac/harness/audit/scan-secrets.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node .cac/harness/audit/scan-instructions.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $out = & node .cac/harness/audit/check-syntax.mjs --json
+          $rc = $LASTEXITCODE
+          Write-Host $out
+          if ($rc -eq 0) { exit 0 }
+          if ($rc -eq 3) {
+            $parsed = $out | Select-Object -Last 1 | ConvertFrom-Json
+            $skippedKinds = @($parsed.skipped | ForEach-Object { $_.kind })
+            # On Windows pure pwsh, only 'sh' may be skipped if sh/bash is absent; 'ps1' MUST be checked on Windows!
+            if ($IsWindows -and $parsed.failures.Count -eq 0 -and $parsed.undecidable.Count -eq 0 -and $parsed.degraded.Count -eq 0 -and ($skippedKinds -notcontains 'ps1')) {
+              Write-Warning "check-syntax degraded (rc=3) for foreign shell class: $($skippedKinds -join ',')"
+              exit 0
+            }
+            if (-not $IsWindows -and $parsed.failures.Count -eq 0 -and $parsed.undecidable.Count -eq 0 -and $parsed.degraded.Count -eq 0 -and ($skippedKinds -notcontains 'sh')) {
+              Write-Warning "check-syntax degraded (rc=3) for foreign shell class: $($skippedKinds -join ',')"
+              exit 0
+            }
+          }
+          Write-Error "check-syntax failed with exit code $rc"
+          exit 1
+
+      - name: Full test suite (run-all.mjs)
+        run: |
+          if (-not (Test-Path -LiteralPath '.cac/tests/run-all.mjs')) {
+            Write-Error ".cac/tests/run-all.mjs missing -- refusing silent skip"
+            exit 1
+          }
+          node .cac/tests/run-all.mjs --level all
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: End-to-end temp install / upgrade / conflict / fault-injection / uninstall (PowerShell setup.ps1)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("cac-ci-e2e-" + [guid]::NewGuid().ToString('N'))
+          try {
+            # 0. Reject reserved Windows path segment before mkdir
+            & pwsh -NoProfile -File .\setup.ps1 (Join-Path $tmp 'CON')
+            if ($LASTEXITCODE -eq 0) { throw "Expected CON path rejection" }
+            if (Test-Path -LiteralPath (Join-Path $tmp 'CON')) { throw "CON directory must not be created" }
+
+            # 1. Dry-run leaves zero files on disk
+            & pwsh -NoProfile -File .\setup.ps1 $tmp -DryRun -WithHarness -WithTests
+            if ($LASTEXITCODE -ne 0) { throw "setup.ps1 -DryRun failed ($LASTEXITCODE)" }
+            if (Test-Path -LiteralPath $tmp) { throw "DryRun must not create target directory" }
+
+            # 2. Full install with -WithHarness -WithTests
+            & pwsh -NoProfile -File .\setup.ps1 install -Target $tmp -WithHarness -WithTests
+            if ($LASTEXITCODE -ne 0) { throw "setup.ps1 install failed ($LASTEXITCODE)" }
+            if (-not (Test-Path -LiteralPath (Join-Path $tmp '.cac/FRAMEWORK-MANIFEST.json'))) { throw "Missing FRAMEWORK-MANIFEST.json" }
+            if (-not (Test-Path -LiteralPath (Join-Path $tmp '.cac/FRAMEWORK-MANIFEST-OPTIONAL.json'))) { throw "Missing FRAMEWORK-MANIFEST-OPTIONAL.json" }
+            if (-not (Test-Path -LiteralPath (Join-Path $tmp '.cac/rules/harness-large-repo.md'))) { throw "Missing harness-large-repo.md in .cac/rules/" }
+
+            # 3. Doctor passes on fresh install
+            $docJson = & node (Join-Path $tmp '.cac/scripts/doctor.mjs') $tmp --json
+            if ($LASTEXITCODE -ne 0) { throw "doctor.mjs failed on installed target: $docJson" }
+
+            # 4. Idempotent upgrade + user-modified conflict -> .cac-base-new (never overwrites user edit)
+            $userEdited = Join-Path $tmp 'AGENTS.md'
+            Add-Content -LiteralPath $userEdited -Value "`n# Local Project Custom Rule`n" -Encoding utf8NoBOM
+            $ruleTarget = Join-Path $tmp '.cac/rules/file-structure.md'
+            $origRule = Get-Content -LiteralPath $ruleTarget -Raw
+            Set-Content -LiteralPath $ruleTarget -Value ($origRule + "`n<!-- local-customization -->`n") -Encoding utf8NoBOM
+
+            & pwsh -NoProfile -File .\setup.ps1 upgrade -Target $tmp -WithHarness
+            if ($LASTEXITCODE -ne 0) { throw "setup.ps1 upgrade failed ($LASTEXITCODE)" }
+            if (-not (Test-Path -LiteralPath ($userEdited + '.cac-base-new'))) { throw "Expected AGENTS.md.cac-base-new on user-edited AGENTS.md" }
+            if (-not (Test-Path -LiteralPath ($ruleTarget + '.cac-base-new'))) { throw "Expected file-structure.md.cac-base-new on user-edited rule" }
+            if ((Get-Content -LiteralPath $ruleTarget -Raw) -notmatch 'local-customization') { throw "User edit in file-structure.md was overwritten!" }
+
+            # 5. Restore clean files via -Force, verify doctor passes again
+            Remove-Item -LiteralPath ($userEdited + '.cac-base-new'), ($ruleTarget + '.cac-base-new') -Force
+            & pwsh -NoProfile -File .\setup.ps1 upgrade -Target $tmp -Force -WithHarness -WithTests
+            if ($LASTEXITCODE -ne 0) { throw "setup.ps1 -Force upgrade failed ($LASTEXITCODE)" }
+            & node (Join-Path $tmp '.cac/scripts/doctor.mjs') $tmp --json | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "doctor.mjs failed after -Force upgrade" }
+
+            # 6. Fault injection leaves interrupted marker caught by doctor.mjs, then clean reinstall recovers
+            $tmpFail = Join-Path ([System.IO.Path]::GetTempPath()) ("cac-ci-fail-" + [guid]::NewGuid().ToString('N'))
+            try {
+              $env:CAC_SETUP_FAIL_AFTER = '2'
+              & pwsh -NoProfile -File .\setup.ps1 $tmpFail
+              if ($LASTEXITCODE -eq 0) { throw "Expected fault-injected install to exit non-zero" }
+            } finally {
+              Remove-Item Env:CAC_SETUP_FAIL_AFTER -ErrorAction SilentlyContinue
+            }
+            & node .cac/scripts/doctor.mjs $tmpFail --json | Out-Null
+            if ($LASTEXITCODE -eq 0) { throw "Expected doctor.mjs to report bad on interrupted install.marker" }
+            Remove-Item -LiteralPath $tmpFail -Recurse -Force -ErrorAction SilentlyContinue
+
+            # 7. Uninstall cleans framework assets while preserving .bak backups / user files
+            & pwsh -NoProfile -File .\setup.ps1 -Uninstall -Target $tmp -Force
+            if ($LASTEXITCODE -ne 0) { throw "setup.ps1 -Uninstall failed ($LASTEXITCODE)" }
+            if (Test-Path -LiteralPath (Join-Path $tmp '.cac/FRAMEWORK-MANIFEST.json')) { throw "Manifest should be removed after uninstall" }
+          } finally {
+            if (Test-Path -LiteralPath $tmp) {
+              Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+            }
+          }
+
+      - name: End-to-end temp install / upgrade / conflict / fault-injection / uninstall (Bash setup.sh)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n setup.sh
+
+          TMP_DIR="$(mktemp -d "${RUNNER_TEMP:-/tmp}/cac-ci-e2e.XXXXXX")"
+          TMP_FAIL="$(mktemp -d "${RUNNER_TEMP:-/tmp}/cac-ci-fail.XXXXXX")"
+          rm -rf "$TMP_DIR" "$TMP_FAIL"
+          trap 'rm -rf "$TMP_DIR" "$TMP_FAIL"' EXIT
+
+          # 0. Reject unknown flag and Windows reserved name CON
+          if ./setup.sh --dryrun "$TMP_DIR" 2>/dev/null; then
+            echo "::error::unknown option --dryrun must fail with exit 2"
+            exit 1
+          fi
+          if ./setup.sh "$TMP_DIR/CON" 2>/dev/null; then
+            echo "::error::Windows reserved segment CON must be rejected on Linux too"
+            exit 1
+          fi
+
+          # 1. Dry-run creates nothing
+          ./setup.sh "$TMP_DIR" --dry-run --with-harness --with-tests
+          if [ -e "$TMP_DIR" ]; then
+            echo "::error::--dry-run created target directory"
+            exit 1
+          fi
+
+          # 2. Full install + doctor
+          ./setup.sh install --target "$TMP_DIR" --with-harness --with-tests
+          test -f "$TMP_DIR/.cac/FRAMEWORK-MANIFEST.json"
+          test -f "$TMP_DIR/.cac/FRAMEWORK-MANIFEST-OPTIONAL.json"
+          test -f "$TMP_DIR/.cac/rules/harness-large-repo.md"
+          node "$TMP_DIR/.cac/scripts/doctor.mjs" "$TMP_DIR" --json
+
+          # 3. Conflict preservation (.cac-base-new)
+          printf '\n# Local custom rule\n' >> "$TMP_DIR/AGENTS.md"
+          printf '\n<!-- local-edit -->\n' >> "$TMP_DIR/.cac/rules/file-structure.md"
+          ./setup.sh upgrade --target "$TMP_DIR" --with-harness
+          test -f "$TMP_DIR/AGENTS.md.cac-base-new"
+          test -f "$TMP_DIR/.cac/rules/file-structure.md.cac-base-new"
+          grep -q 'local-edit' "$TMP_DIR/.cac/rules/file-structure.md"
+
+          # 4. Force upgrade + doctor
+          rm -f "$TMP_DIR/AGENTS.md.cac-base-new" "$TMP_DIR/.cac/rules/file-structure.md.cac-base-new"
+          ./setup.sh upgrade --target "$TMP_DIR" --force --with-harness --with-tests
+          node "$TMP_DIR/.cac/scripts/doctor.mjs" "$TMP_DIR" --json
+
+          # 5. Fault injection marker detection
+          if CAC_SETUP_FAIL_AFTER=2 ./setup.sh "$TMP_FAIL" 2>/dev/null; then
+            echo "::error::fault injection should have failed"
+            exit 1
+          fi
+          if node .cac/scripts/doctor.mjs "$TMP_FAIL" --json >/dev/null 2>&1; then
+            echo "::error::doctor.mjs should fail on interrupted install.marker"
+            exit 1
+          fi
+
+          # 6. Uninstall
+          ./setup.sh --uninstall --target "$TMP_DIR" --force
+          test ! -f "$TMP_DIR/.cac/FRAMEWORK-MANIFEST.json"
+
+      - name: Repository doctor & pack-check
+        run: |
+          node .cac/scripts/doctor.mjs --json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/cac-base.mjs pack-check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

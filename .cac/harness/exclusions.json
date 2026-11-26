@@ -1,0 +1,73 @@
+{
+  "$schema": "cac-base exclusions v1",
+  "version": 1,
+  "note": "框架分发、清单生成（FRAMEWORK-MANIFEST.json）与无损安装升级的唯一排除表真相源。路径统一使用相对仓库根的正斜杠 POSIX glob；单星号 * 不跨目录（故 .cac/feedback/*.md 排除私有反馈与索引的同时保留 .cac/feedback/templates/**）。",
+  "alwaysExclude": [
+    ".cac/FRAMEWORK-MANIFEST.json",
+    ".cac/FRAMEWORK-MANIFEST-OPTIONAL.json",
+    ".cac/FRAMEWORK-MANIFEST.txt",
+    ".cac/FRAMEWORK-MANIFEST-OPTIONAL.txt",
+    ".cac/settings.json",
+    ".cac/settings.local.json",
+    ".cac/settings-windows.json",
+    ".cac/.credentials.json",
+    ".cac/.needs-review",
+    ".cac/.needs-review.lock",
+    ".cac/.tdd-exempt",
+    ".cac/.red-verified",
+    ".cac/.static-gate",
+    ".cac/.degraded-review",
+    ".cac/.fast-mode",
+    ".cac/.subagent-reminded",
+    ".cac/.three-file-sync-advised",
+    ".cac/.tdd-gate-advised",
+    ".cac/.stop-gate-strikes",
+    ".cac/.stop-gate-advised",
+    ".cac/.precompact-block-epoch",
+    ".cac/.async-verify-last",
+    ".cac/signals.jsonl",
+    "**/signals.jsonl",
+    ".cac/.runtime/**",
+    ".cac/evidence/**",
+    ".cac/harness/module-catalog.json",
+    ".cac/harness/receipts/**",
+    ".cac/harness/state/**",
+    ".cac/harness/waivers/**",
+    ".cac/harness/trend/**",
+    ".cac/harness/evidence/**",
+    ".cac/harness/ext/**",
+    ".cac/harness/ext/state/**",
+    ".cac/rules/harness-large-repo.md",
+    ".cac/rules/quality-attributes.md",
+    ".cac/tests/**",
+    ".cac/research/**",
+    ".cac/agent-memory/**",
+    ".cac/worktrees/**",
+    ".cac/feedback/*.md",
+    ".cac/EVOLUTION.md",
+    "**/*.bak",
+    "**/*.cac-base-new",
+    "**/*.framework-new",
+    "**/*.swp",
+    "**/.DS_Store",
+    ".DS_Store",
+    "**/Thumbs.db",
+    "Thumbs.db"
+  ],
+  "mergedFiles": [
+    ".cac/settings.json"
+  ],
+  "optionalPackages": {
+    "tests": ".cac/tests",
+    "harness": ".cac/harness/ext"
+  },
+  "seededRootFiles": [
+    "AGENTS.md"
+  ],
+  "templateInitFiles": [
+    {
+      "template": ".cac/feedback/templates/feedback-index-template.md",
+      "target": ".cac/feedback/FEEDBACK-INDEX.md"
+    }
+  ]
+}

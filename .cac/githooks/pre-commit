@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+set -eu
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+cd "$ROOT" || exit 0
+if ! command -v node >/dev/null 2>&1; then
+    printf 'cac-base pre-commit: [SKIPPED] PATH 上没有 node（未执行 != 通过）\n' >&2
+    exit 0
+fi
+exec node .cac/githooks/run.mjs pre-commit "$@"
