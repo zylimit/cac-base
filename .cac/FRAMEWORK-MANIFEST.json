@@ -265,8 +265,8 @@
     },
     {
       "path": ".cac/rules/AGENTS.md",
-      "sha256": "c99234fe4c99627abbbdcf17905fb0263fb92ff5778cabbd337134b433bcb8ad",
-      "bytes": 30406
+      "sha256": "d1b6eac6ab4b76a3eb2947abf32cc13e4a0bb525cb684c6bcc2489e4850fc3f5",
+      "bytes": 30385
     },
     {
       "path": ".cac/rules/design-detail.md",
@@ -275,8 +275,8 @@
     },
     {
       "path": ".cac/rules/dev-workflow-details.md",
-      "sha256": "cabd43de8f2452e1e9ccb6b230fc47edcc722b6bebff5a32b3a2ff3ceebe86ea",
-      "bytes": 24258
+      "sha256": "0d8ced4f4168de303354c694fb4634f798ec0ff20aa990300ac6914f8b82d9ec",
+      "bytes": 24230
     },
     {
       "path": ".cac/rules/domain-rulings.md",
@@ -295,8 +295,8 @@
     },
     {
       "path": ".cac/rules/subagent-dispatch.md",
-      "sha256": "1a0fa47109f478ce948b31145993b777f299b067c158d7c75a9d28b99e0f0724",
-      "bytes": 9288
+      "sha256": "67f8fd32a0a6a72930ecc04e121dcc8ab283a74f377af472eca1e6d4be6f6e8d",
+      "bytes": 9067
     },
     {
       "path": ".cac/rules/workflow-orchestration.md",

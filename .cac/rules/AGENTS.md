@@ -82,22 +82,22 @@
 [Sub-Agent 调度规则]
     | Agent | 文件 | Skill | 默认模型与边界 | 职责 |
     |-------|------|-------|----------------|------|
-    | implementer | .cac/agents/implementer.md | dev-builder | sonnet，HIGH 档派单传 opus（读写执行，禁 Agent；`no-direct-code-guard.mjs` 放行） | 编码 + 编译验证 + 自检 + 人读文档同步 |
-    | code-reviewer | .cac/agents/code-reviewer.md | code-review | opus（只审不改，仅可维护自身战术记忆；`subagent-bookkeeping.mjs` 记账） | 三阶段缺陷优先审查 + 报告，只审不改 |
-    | tester | .cac/agents/tester.md | test-builder | sonnet（读写执行，禁 Agent，≠被测作者；`record-authorship.mjs` 校验独立性） | 写 / 跑测试（与实现者不同实例）+ 红锁验证 + 运行证据 |
-    | deployer | .cac/agents/deployer.md | release-builder | opus（读写执行，禁 Agent；`release-gate.mjs` 把守前置条件） | 受控打包 / 部署 + 三件套客观结果 |
-    | researcher | .cac/agents/researcher.md | 无 | sonnet（`plan` 只读；靠自觉） | 代码库调研、调用链梳理、外部官方文档查证、影响面地图 |
-    | feedback-observer | .cac/agents/feedback-observer.md | feedback-writer | sonnet（仅文件读写，禁 Bash/Agent；靠自觉） | 去重记录用户反馈到 `.cac/feedback/`（主 Agent 显式传递用户原话与结构化上下文摘录） |
-    | evolution-runner | .cac/agents/evolution-runner.md | evolution-engine | sonnet（`plan` 只读；跨项目先跑 `node .cac/scripts/collect-feedback.mjs` 收下游） | 扫 feedback 聚类出进化与规则毕业建议 |
-    | progress-recorder | .cac/agents/progress-recorder.md | progress-recorder | sonnet（仅文件读写，禁 Bash/Agent；靠自觉） | 维护 `progress.md`（主 Agent 显式传递结构化上下文摘录；超线由脚本归档） |
-    | domain-recorder | .cac/agents/domain-recorder.md | 无 | sonnet（仅文件读写，禁 Bash/Agent；靠自觉） | 按七栏结构收录领域口径到 `domain/` 并维护依赖 |
+    | implementer | .cac/agents/implementer.md | dev-builder | inherit（读写执行，禁 Agent；`no-direct-code-guard.mjs` 放行） | 编码 + 编译验证 + 自检 + 人读文档同步 |
+    | code-reviewer | .cac/agents/code-reviewer.md | code-review | inherit（只审不改，仅可维护自身战术记忆；`subagent-bookkeeping.mjs` 记账） | 三阶段缺陷优先审查 + 报告，只审不改 |
+    | tester | .cac/agents/tester.md | test-builder | inherit（读写执行，禁 Agent，≠被测作者；`record-authorship.mjs` 校验独立性） | 写 / 跑测试（与实现者不同实例）+ 红锁验证 + 运行证据 |
+    | deployer | .cac/agents/deployer.md | release-builder | inherit（读写执行，禁 Agent；`release-gate.mjs` 把守前置条件） | 受控打包 / 部署 + 三件套客观结果 |
+    | researcher | .cac/agents/researcher.md | 无 | inherit（`plan` 只读；靠自觉） | 代码库调研、调用链梳理、外部官方文档查证、影响面地图 |
+    | feedback-observer | .cac/agents/feedback-observer.md | feedback-writer | inherit（仅文件读写，禁 Bash/Agent；靠自觉） | 去重记录用户反馈到 `.cac/feedback/`（主 Agent 显式传递用户原话与结构化上下文摘录） |
+    | evolution-runner | .cac/agents/evolution-runner.md | evolution-engine | inherit（`plan` 只读；跨项目先跑 `node .cac/scripts/collect-feedback.mjs` 收下游） | 扫 feedback 聚类出进化与规则毕业建议 |
+    | progress-recorder | .cac/agents/progress-recorder.md | progress-recorder | inherit（仅文件读写，禁 Bash/Agent；靠自觉） | 维护 `progress.md`（主 Agent 显式传递结构化上下文摘录；超线由脚本归档） |
+    | domain-recorder | .cac/agents/domain-recorder.md | 无 | inherit（仅文件读写，禁 Bash/Agent；靠自觉） | 按七栏结构收录领域口径到 `domain/` 并维护依赖 |
     三层不混写：agents / skills 是稳定角色源码；Spec / DEV-PLAN / 派单是项目绑定；档位会话记录、review marker、evidence 等运行态只进 git 忽略的文件。派发前确认派单包七字段齐全，Sub-Agent 不继承 session 历史（宿主无会话克隆，记录类角色同样由主 Agent 显式传递结构化上下文摘录），缺上下文它只能猜。
 
 [项目状态检测与路由]
     初始化时按文件存在性路由：无 Product-Spec.md → 全新项目，引导描述想法或调 /product-spec-builder；有 Spec、无 DEV-PLAN、无代码 → 输出交付指南；有 Spec + DEV-PLAN、无代码 → 引导 /dev-builder；有 Spec + 代码、无 DEV-PLAN → 建议 /dev-planner；三者齐 → 开发中，可继续开发、审查、修复或发布。显示格式见 .cac/rules/dev-workflow-details.md「项目进度检测显示格式」；会话中途文件变化后做到哪一步以 `node .cac/scripts/project-status.mjs` 的输出为准，不凭印象估（首轮开场寒暄直接用 `session-start.mjs` 预注的启动快照秒回，见 `[会话开场与工作目录边界]`）。怀疑安装不全跑 `node .cac/scripts/doctor.mjs`。
 
 [开发测试规则]
-    - 每个 Task 先定档再派：LOW（< 50 行，不碰契约 / 解析器 / 鉴权 / 迁移 / 支付 / hooks，不引新依赖）只派 implementer，主 Agent 对 diff 与运行器输出验收；MEDIUM（50–300 行或碰上述一类）加一轮 code-reviewer 只跑 Stage 0 + 1；HIGH（> 300 行、碰两类以上上述路径、线上 bug / 迁移 / 安全）implementer 用 opus、reviewer 全三 Stage、tester 补关键逻辑测试。判据与链见 .cac/rules/dev-workflow-details.md [项目开发阶段]（靠自觉）。
+    - 每个 Task 先定档再派：LOW（< 50 行，不碰契约 / 解析器 / 鉴权 / 迁移 / 支付 / hooks，不引新依赖）只派 implementer，主 Agent 对 diff 与运行器输出验收；MEDIUM（50–300 行或碰上述一类）加一轮 code-reviewer 只跑 Stage 0 + 1；HIGH（> 300 行、碰两类以上上述路径、线上 bug / 迁移 / 安全）implementer、reviewer 全三 Stage、tester 补关键逻辑测试。判据与链见 .cac/rules/dev-workflow-details.md [项目开发阶段]（靠自觉）。
     - 审查收敛：一轮只 HIGH 阻断，修完由同一轮 reviewer（或带原审查报告句柄的复核）复核一次即收口，Medium / Low 记 progress.md 残留随后续 Task 顺手修，不派 fresh reviewer 重开全量新一轮（靠自觉）。
     - 每个 Phase 过四步走（Code Review → 测试完整性 → 编译验证 → 功能测试），中间有改动四步重来；收尾四态 PASS / CONCERNS / FAIL / WAIVED，WAIVED 写明理由与批准人，安全与数据丢失类不许 WAIVED。细则见 dev-builder SKILL.md [Phase 完成度判断]，Git 工作流见其 [开发规则清单]（靠自觉）。
     - red-locks-the-bug 只给线上行为 bug 与核心解析器 / 契约缺陷：先派 tester 出红 → 主 Agent 亲见 fail → 写入 `.cac/.red-verified`（两小时内有效）→ implementer 修绿；边角输入、参数花样、文案类记残留不开红锁。闸：`tdd-gate.mjs`——派单 prompt 含 red-lock 字样（bug / 修复 / 线上 / 解析器 / 契约 / 迁移 / 鉴权 等，全表在 `.cac/hooks/tdd-gate.mjs` 头部）且无有效标记时，standard 提醒、strict 拦；其它单子静默，不用建 `.cac/.tdd-exempt`。
