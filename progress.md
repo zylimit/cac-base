@@ -12,6 +12,10 @@
 
 ## Decisions
 
+- 2026-11-27: 加固 `cac-base` v1.2.1 安装器、设置合并器与清单排除规则，实现重复安装、跨版本升级、悬空坏链自愈、崩溃锁接管与 `cac-base-link -> cac-base` 跨模式反向切换 100% 幂等成功且零穿透污染 `.claude/`。
+  - 依据：当目标仓库曾安装 `cac-base-link`（`.cac/skills` 与 `.cac/agents` 为指向 `../.claude/{skills,agents}` 的符号链接/Windows Junction，且含 `.cac/hooks/cc-bridge.mjs` 桥接器）或存在悬空死链、阻碍目录创建的同名文件时，直接穿透路径读写会导致假冲突或覆写污染 `.claude/` 下的外部文件；通过引入 `unlinkSymlinkOrJunctionSafe`（Windows 优先 `rmdirSync` 仅拆重解析点、POSIX `unlinkSync`，严禁 `rmSync({recursive:true})`）、`planInstall` 浅到深 `unlinkedDirs` 预扫描与零穿透 `'create'` 判定、叶子符号链接拆链写入、`retiredFiles` 退役受管文件（`cc-bridge.mjs`/`root.mjs`/`ps-floor.mjs`）清理及空父目录回收，配合 `settings-merge.mjs` 剥离 `cc-bridge.mjs` 与清理空事件键，彻底消除跨模式切换死角。
+  - 适用范围：`scripts/lib/{installer,settings-merge,manifest}.mjs`、`.gitignore`、`.cac/.gitignore`、`.cac/harness/exclusions.json`、`package.json`、`README.md`、`.cac/FRAMEWORK-MANIFEST.json`。
+  - 取代：未区分目录/叶子符号链接直接 `existsSync`/`copyFileSync` 读写、未剥离 `cc-bridge.mjs` 遗留桥接 Hook 及未自动退役旧清单废弃受管文件的 v1.2.0 安装实现。
 - 2026-11-27: 闭环 `cac-base` v1.2.0 三阶段审查检出的全部 12 项问题（3 HIGH / 5 MEDIUM / 4 LOW），保持 194 个受管文件清单零漂移零泄漏。
   - 依据：三阶段审查发现模板路径笔误（`feedback-topic-template.md`）、遗留子命令引用与裸词误装风险（`cac-base.mjs package`）、`pre-commit-check.mjs` 与 `red-blue-pack.mjs` 未接入外层父目录 `.git` 边界守卫、无首提空仓 `HEAD` 暂存改动不可见、软链子目录 `findCacProjectRoot` 绕过与 `tmpKey` 排除、Windows `relToProject` 大小写及 `session-start` `trackedSubdir` 误告警、`audit/README.md` 残留旧版单文件与虚构白名单描述，以及 4 处悬空引用与 `rules-audit` 扫描目录缺口。
   - 适用范围：`.cac/skills/{feedback-writer,readable-docs}/SKILL.md`、`.cac/skills/red-blue-review/{SKILL.md,RED-BLUE-REVIEW.md,red-blue-pack.mjs}`、`.cac/skills/product-spec-builder/references/discovery-methods.md`、`scripts/cac-base.mjs`、`.cac/hooks/{pre-commit-check,session-start}.mjs`、`.cac/hooks/lib/io.mjs`、`.cac/harness/lib/core.mjs`、`.cac/harness/ext/{rules.mjs,rules/harness-large-repo.md}`、`.cac/harness/audit/README.md`、`docs/HOST-CONTRACT.md`、`.cac/FRAMEWORK-MANIFEST.json`。
@@ -47,7 +51,7 @@
 
 ## 当前断点
 
-- `cac-base` v1.2.0 三阶段审查检出的全部 12 项问题（3 HIGH / 5 MEDIUM / 4 LOW）已完成代码与文档落盘并刷新 194 项受管文件清单，待独立 `cac-tester` 补充回归断言与 `cac-reviewer` 复核验收。
+- `cac-base` v1.2.1 独立三阶段代码审查关联问题（F-02 `setup.ps1` 裸词误输守卫、F-06 `doctor.mjs` 外部目录无参自寻根与 `~/.local/bin` CLI 探测、F-08 `acquireInstallLock` 10 分钟陈旧锁接管/残留目录锁防护与叶子物理目录 `.bak-<ts>` 腾退、F-09 `runUninstall` 跨引擎误卸载防护与 `.cac/{skills,agents}` 残留软链拆解、F-10 `isReleaseExcludedRel` 补入 `cac-link-new`）已全部修复并刷新 `FRAMEWORK-MANIFEST.json`，待独立 `cac-tester` 补充回归断言与 `cac-reviewer` 复核闭环。
 
 ## TODO
 
@@ -61,6 +65,7 @@
 - [P0][DONE][#8] v1.1.1 修复外层父目录 `.git` 向上逃逸误报与 `SessionStart` 启动快照预注（新空项目开场零工具秒回）
 - [P0][DONE][#9] v1.2.0 全量无损融合 `cc-base` 主控宪法/细则/22 技能原文血肉与新增 12 份参考示例，`doctor.mjs` 升至 7 核心细则并重算 194 受管文件清单
 - [P0][DONE][#10] v1.2.0 闭环三阶段审查全部 12 项问题（3 HIGH / 5 MEDIUM / 4 LOW）并重算 `FRAMEWORK-MANIFEST.json`
+- [P0][DONE][#11] v1.2.1 加固安装器安全拆链、退役受管文件清理、`cc-bridge.mjs` Hook 剥离与 `*.cac-link-new` 排除规则，打通 `cac-base-link <-> cac-base` 零污染切换
 
 ## Done
 
@@ -72,3 +77,5 @@
 - 2026-11-26: 完成 v1.1.1 修复外层父目录 `.git` 越界逃逸与新空项目开场连发工具探测问题（新增 `gitStateOf` 与 `.cac/` 根边界锁死、子目录 `porcelainZ` 限定与前缀剥离、`SessionStart` 毫秒级启动快照预注与未独立 `git init` 提示、`.cac/rules/AGENTS.md` 开场零探测与工作目录硬边界规则）。
 - 2026-11-26: 完成 v1.2.0 `cc-base` 全量原文血肉 1:1 无损融合（无头 `.cac/rules/AGENTS.md` 完整承载 SiteMaster 10 条手搓铁律、22 条 Skill 调用规则、9 角色调度表、开发测试与项目记忆细则、开场零探测硬边界与完整 ASCII 开场白；`doctor.mjs` 补登第 7 份核心细则 `workflow-orchestration`；`FRAMEWORK-MANIFEST.json` 重算为 194 个受管文件、0 seeded 文件）。
 - 2026-11-27: 完成 v1.2.0 三阶段审查全部 12 项问题修复（修正 `feedback-entry-template.md` 路径、清理 `cac-base.mjs package` 并加裸词误输 `exit 2` 守卫、`pre-commit-check` 与 `red-blue-pack` 接入外层父目录 `.git` 阻断与 `--relative -- .` 限定、`core.mjs` 空仓 `EMPTY_TREE_SHA` 暂存可见性、`findCacProjectRoot` 软链 `realpath` 二次查找与 `tmpKey` 排除、Windows `relToProject` 大小写不敏感与 `session-start` 豁免 `trackedSubdir`、`audit/README.md` 去虚构白名单并对齐三哨兵契约、4 处 LOW 细节收口及刷新 `FRAMEWORK-MANIFEST.json`）。
+- 2026-11-27: 完成 v1.2.1 安装器、设置合并器与清单规则加固（新增 `unlinkSymlinkOrJunctionSafe`、`planInstall` 浅到深 `unlinkedDirs` 目录链接拆解与叶子符号链接防穿透、`retiredFiles` 退役托管文件自动清理及空父目录回收、获锁前 `.cac`/`.runtime` 软链拆解与阻碍文件 `.bak` 腾退、`runUninstall` 全链路 `lstat` 守卫、`settings-merge.mjs` 剥离 `cc-bridge.mjs` 并清理空事件键、全仓排除 `*.cac-link-new` 及刷新 `FRAMEWORK-MANIFEST.json`）。
+- 2026-11-27: 修复 v1.2.1 三阶段审查关联问题 F-02/F-06/F-08/F-09/F-10（`setup.ps1` 裸词误输 `exit 2` 守卫；`doctor.mjs` 未显式传参时自动回退 `selfRoot` 寻根并补充 `~/.local/bin` 与 Windows 用户目录 `codeagent` 探测；`installer.mjs` 新增 10 分钟陈旧锁超时与残留目录锁接管、叶子物理目录冲突判定与 `.bak-<ts>` 重命名防 `EISDIR`、`runUninstall` 校验 `engine` 拒绝跨引擎误卸载并拆解残留 `.cac/{skills,agents}` 软链；`cac-base.mjs` 发布排除补入 `*.cac-link-new` 并重算 `FRAMEWORK-MANIFEST.json`）。

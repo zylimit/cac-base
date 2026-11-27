@@ -22,6 +22,7 @@ settings.local.json
 .credentials.json
 *.bak
 *.cac-base-new
+*.cac-link-new
 *.swp
 .DS_Store
 Thumbs.db

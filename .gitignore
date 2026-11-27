@@ -6,6 +6,7 @@ release/
 *.tar.gz
 *.bak
 *.cac-base-new
+*.cac-link-new
 *.swp
 .DS_Store
 Thumbs.db

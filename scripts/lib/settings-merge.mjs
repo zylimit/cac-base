@@ -10,7 +10,8 @@ const NODE_BIN_RE = /^["']?node(?:\.exe)?["']?$/i;
 const HOOK_SCRIPT_REL_RE = /^(?:\$\{(?:CODEAGENT3_PROJECT_DIR|CAC_PROJECT_DIR)\}[/\\]|\.[/\\])?\.cac[/\\]hooks[/\\]([A-Za-z0-9_-]+)\.mjs$/;
 const STRING_CMD_RE = /^(?:["']?node(?:\.exe)?["']?)\s+(?:"([^"]+)"|'([^']+)'|(\S+))((?:\s+--[A-Za-z0-9_-]+)*)\s*$/i;
 const HOOK_FLAG_ARG_RE = /^--[A-Za-z0-9_-]+$/;
-const LEGACY_HOOK_RE = /(?:^|[/\\]|["'\s])\.cac[/\\]hooks[/\\][A-Za-z0-9_-]+\.(?:sh|ps1)(?:$|["'\s])/i;
+const LEGACY_HOOK_RE =
+  /(?:^|[/\\}]|["'\s])\.cac[/\\]hooks[/\\](?:[A-Za-z0-9_-]+\.(?:sh|ps1)|cc-bridge\.mjs)(?:$|["'\s])/i;
 
 function stripMatchingQuotes(s) {
   const t = String(s ?? '').trim();
@@ -41,7 +42,7 @@ export function classifyHookEntry(entry) {
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
   if (typeof entry.command === 'string' && NODE_BIN_RE.test(entry.command.trim()) && Array.isArray(entry.args) && entry.args.length >= 1) {
     const m = HOOK_SCRIPT_REL_RE.exec(stripMatchingQuotes(entry.args[0]));
-    if (m) {
+    if (m && m[1].toLowerCase() !== 'cc-bridge') {
       const rest = entry.args.slice(1).map((x) => String(x));
       if (rest.every((a) => HOOK_FLAG_ARG_RE.test(a))) {
         return { form: 'exec', name: m[1], extraArgs: rest };
@@ -53,7 +54,7 @@ export function classifyHookEntry(entry) {
     if (cm) {
       const scriptPath = cm[1] ?? cm[2] ?? cm[3] ?? '';
       const pm = HOOK_SCRIPT_REL_RE.exec(scriptPath);
-      if (pm) {
+      if (pm && pm[1].toLowerCase() !== 'cc-bridge') {
         const extraArgs = cm[4] ? cm[4].trim().split(/\s+/).filter(Boolean) : [];
         return { form: 'string', name: pm[1], extraArgs };
       }
@@ -63,7 +64,7 @@ export function classifyHookEntry(entry) {
 }
 
 /**
- * Check if a hook entry is a legacy .cac/hooks/*.sh or *.ps1 entry that should be cleaned on upgrade.
+ * Check if a hook entry is a legacy .cac/hooks/*.sh, *.ps1, or cc-bridge.mjs entry that should be cleaned on upgrade.
  * @param {any} entry
  * @returns {boolean}
  */
@@ -195,7 +196,8 @@ function unionStringList(targetArr, sourceArr) {
 }
 
 /**
- * Clean legacy .sh/.ps1 framework hooks from target settings object (in place on clone).
+ * Clean legacy .sh/.ps1/cc-bridge.mjs framework hooks from target settings object (in place on clone).
+ * Deletes empty groups and event keys whose groups all became empty after stripping.
  * @param {Record<string, any>} data
  * @returns {number} count of removed legacy hook entries
  */
@@ -211,7 +213,6 @@ function stripLegacyHooks(data) {
         keptGroups.push(g);
         continue;
       }
-      const before = g.hooks.length;
       const filtered = g.hooks.filter((h) => {
         if (isLegacyFrameworkHook(h)) {
           removed++;
@@ -219,11 +220,15 @@ function stripLegacyHooks(data) {
         }
         return true;
       });
-      if (filtered.length > 0 || before === 0) {
+      if (filtered.length > 0) {
         keptGroups.push({ ...g, hooks: filtered });
       }
     }
-    hooks[event] = keptGroups;
+    if (keptGroups.length > 0) {
+      hooks[event] = keptGroups;
+    } else {
+      delete hooks[event];
+    }
   }
   return removed;
 }
@@ -532,7 +537,44 @@ function runSelftest() {
     throw new Error('custom non-framework hook was lost');
   }
 
-  process.stdout.write(JSON.stringify({ ok: true, tests: 3 }) + '\n');
+  // 4. cc-bridge.mjs (string + quoted/env/backslash + exec forms) stripped cleanly, empty event deleted, custom hook preserved
+  const linkTarget = {
+    hooks: {
+      SessionStart: [
+        {
+          hooks: [
+            { type: 'command', command: 'node .cac/hooks/cc-bridge.mjs session-start' },
+            { type: 'command', command: 'node "${CODEAGENT3_PROJECT_DIR}\\.cac\\hooks\\cc-bridge.mjs" session-start' },
+          ],
+        },
+      ],
+      PreToolUse: [
+        {
+          matcher: 'Bash|PowerShell|Shell',
+          hooks: [
+            { type: 'command', command: 'node', args: ['./.cac/hooks/cc-bridge.mjs', 'pre-tool-use'] },
+            { type: 'command', command: 'node scripts/keep-my-hook.mjs' },
+          ],
+        },
+      ],
+    },
+  };
+  const fromLink = mergeSettings(linkTarget, srcSettings, { hookForm: 'string' });
+  if (fromLink.removedLegacy !== 3) {
+    throw new Error(`expected 3 cc-bridge legacy hooks removed, got ${fromLink.removedLegacy}`);
+  }
+  if ('SessionStart' in fromLink.settings.hooks) {
+    throw new Error('expected empty SessionStart event key to be deleted after stripping cc-bridge.mjs');
+  }
+  const preAfterBridge = fromLink.settings.hooks.PreToolUse.flatMap((g) => g.hooks);
+  if (preAfterBridge.some((h) => JSON.stringify(h).includes('cc-bridge.mjs'))) {
+    throw new Error('cc-bridge.mjs remained in merged settings');
+  }
+  if (!preAfterBridge.some((h) => h.command === 'node scripts/keep-my-hook.mjs')) {
+    throw new Error('custom hook next to cc-bridge.mjs was lost');
+  }
+
+  process.stdout.write(JSON.stringify({ ok: true, tests: 4 }) + '\n');
 }
 
 const isMain = process.argv[1] && path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1]);

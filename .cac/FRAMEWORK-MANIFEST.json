@@ -10,8 +10,8 @@
     },
     {
       "path": ".cac/.gitignore",
-      "sha256": "cbe47b102534a01a26e06648974ae3eecae6aa53e94d626a4c4ff49969076220",
-      "bytes": 406
+      "sha256": "edbce40dd80a2aeb5edb28a59704801eba2910d0ae6e0d9cd27699e0422e9894",
+      "bytes": 421
     },
     {
       "path": ".cac/agents/code-reviewer.md",
@@ -115,8 +115,8 @@
     },
     {
       "path": ".cac/harness/exclusions.json",
-      "sha256": "cef0ac25b644570ae6802e1006c931b259e9c60e64f2d1897fab8f5c5915be83",
-      "bytes": 2167
+      "sha256": "85c8e2f12c24a9c9cdb46b23381d72050cb6f6954ebcaad5d94f69eb136b9e05",
+      "bytes": 2192
     },
     {
       "path": ".cac/harness/harness.mjs",
@@ -230,8 +230,8 @@
     },
     {
       "path": ".cac/hooks/secret-exfil-guard.mjs",
-      "sha256": "d4c5c81667f4a8da2ec3cc77ad7dc9e079ffddd97fd7edfe27ac63ea3a7feefc",
-      "bytes": 34604
+      "sha256": "46c8c664ae98963eb43adf5c910ae7edddbef1ef67843d86024884e9beba267f",
+      "bytes": 36091
     },
     {
       "path": ".cac/hooks/session-start.mjs",
@@ -315,8 +315,8 @@
     },
     {
       "path": ".cac/scripts/doctor.mjs",
-      "sha256": "289e89039e6747ff4e9fad0bff38fa8a0171a3e5609c07dfc8ccc36dfa8f6bdf",
-      "bytes": 23055
+      "sha256": "ae0d7b10e9988c1cdbf124674ba724fd93d3441142d00b985d2ac59a70cc9e66",
+      "bytes": 25447
     },
     {
       "path": ".cac/scripts/gate-audit.mjs",

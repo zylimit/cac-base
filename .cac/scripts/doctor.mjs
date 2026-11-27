@@ -6,6 +6,7 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -112,6 +113,77 @@ function whichCmd(exe) {
   return null;
 }
 
+function findExecutableInDir(dir, name) {
+  if (!dir) return null;
+  if (process.platform === 'win32') {
+    for (const ext of ['.exe', '.cmd', '.bat', '']) {
+      const cand = path.join(dir, name + ext);
+      try {
+        if (fs.existsSync(cand) && fs.statSync(cand).isFile()) return cand;
+      } catch {
+        /* ignore */
+      }
+    }
+    return null;
+  }
+  const cand = path.join(dir, name);
+  try {
+    if (fs.existsSync(cand) && fs.statSync(cand).isFile()) {
+      fs.accessSync(cand, fs.constants.X_OK);
+      return cand;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function resolveCodeagentCmd(name) {
+  const fromPath = whichCmd(name);
+  if (fromPath) return fromPath;
+
+  let home = '';
+  try {
+    home = os.homedir();
+  } catch {
+    home = process.env.HOME || process.env.USERPROFILE || '';
+  }
+
+  const fallbackDirs = [];
+  if (home) {
+    fallbackDirs.push(path.join(home, '.local', 'bin'));
+  }
+  if (process.platform === 'win32') {
+    const localAppData = process.env.LOCALAPPDATA || (home ? path.join(home, 'AppData', 'Local') : '');
+    if (localAppData) {
+      fallbackDirs.push(path.join(localAppData, 'Programs', 'codeagent'));
+      fallbackDirs.push(path.join(localAppData, 'Programs', 'codeagent', 'bin'));
+    }
+  }
+
+  for (const d of fallbackDirs) {
+    const hit = findExecutableInDir(d, name);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function hasCacDir(dirPath) {
+  try {
+    return fs.statSync(path.join(dirPath, '.cac')).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function resolveDefaultDoctorRoot() {
+  const cwd = process.cwd();
+  if (hasCacDir(cwd)) return '.';
+  const selfRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+  if (hasCacDir(selfRoot)) return selfRoot;
+  return '.';
+}
+
 function parseDoctorArgs(argv) {
   let jsonMode = false;
   let rootArg = null;
@@ -127,7 +199,12 @@ function parseDoctorArgs(argv) {
       }
       rootArg = next;
     } else if (a.startsWith('--root=')) {
-      rootArg = a.slice(7);
+      const val = a.slice(7);
+      if (!val) {
+        process.stderr.write('doctor: --root requires a directory path\n');
+        process.exit(2);
+      }
+      rootArg = val;
     } else if (a === '-h' || a === '--help') {
       process.stdout.write('usage: node .cac/scripts/doctor.mjs [target-dir] [--root <dir>] [--json]\n');
       process.exit(0);
@@ -141,7 +218,12 @@ function parseDoctorArgs(argv) {
       process.exit(2);
     }
   }
-  return { jsonMode, rootArg: rootArg || '.' };
+  const explicitRoot = rootArg !== null;
+  return {
+    jsonMode,
+    explicitRoot,
+    rootArg: explicitRoot ? rootArg : resolveDefaultDoctorRoot(),
+  };
 }
 
 function extractHookScriptPath(entry, root) {
@@ -213,15 +295,20 @@ function verifyManifestFile(root, relManifestPath, label, { ok, bad, note }) {
   }
 }
 
-export function runDoctor(rawTarget, { jsonMode = false } = {}) {
-  const segs = String(rawTarget).split(/[\\/]+/);
+export function runDoctor(rawTarget, { jsonMode = false, explicitRoot } = {}) {
+  const hasExplicit =
+    explicitRoot !== undefined
+      ? Boolean(explicitRoot)
+      : rawTarget !== undefined && rawTarget !== null && rawTarget !== '';
+  const effectiveTarget = hasExplicit ? String(rawTarget) : resolveDefaultDoctorRoot();
+  const segs = String(effectiveTarget).split(/[\\/]+/);
   if (segs.includes('..')) {
-    process.stderr.write(`doctor: 路径不安全（含 '..'）：${rawTarget}\n`);
+    process.stderr.write(`doctor: 路径不安全（含 '..'）：${effectiveTarget}\n`);
     process.exit(2);
   }
-  const root = path.resolve(rawTarget);
+  const root = path.resolve(effectiveTarget);
   if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
-    process.stderr.write(`doctor: 目标目录不存在：${rawTarget}\n`);
+    process.stderr.write(`doctor: 目标目录不存在：${effectiveTarget}\n`);
     process.exit(2);
   }
 
@@ -499,7 +586,7 @@ export function runDoctor(rawTarget, { jsonMode = false } = {}) {
   let foundCliName = null;
   let foundCliVer = '';
   for (const cand of CODEAGENT_CANDIDATES) {
-    const bin = whichCmd(cand);
+    const bin = resolveCodeagentCmd(cand);
     if (bin) {
       foundCliName = cand;
       const vr = spawnSync(bin, ['--version'], {
@@ -634,7 +721,7 @@ export function runDoctor(rawTarget, { jsonMode = false } = {}) {
 
 const isMain = process.argv[1] && path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1]);
 if (isMain) {
-  const { jsonMode, rootArg } = parseDoctorArgs(process.argv.slice(2));
-  const exitCode = runDoctor(rootArg, { jsonMode });
+  const { jsonMode, rootArg, explicitRoot } = parseDoctorArgs(process.argv.slice(2));
+  const exitCode = runDoctor(rootArg, { jsonMode, explicitRoot });
   process.exit(exitCode);
 }

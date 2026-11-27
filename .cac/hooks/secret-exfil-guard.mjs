@@ -75,7 +75,6 @@ const METADATA_VERBS = new Set([
   'ls', 'stat', 'test', '[', '[[', 'file', 'du', 'chmod', 'chown', 'chgrp',
   'rm', 'unlink', 'touch', 'mkdir', 'rmdir', 'cd', 'pushd', 'popd',
   'basename', 'dirname', 'realpath', 'readlink', 'which', 'echo', 'printf', 'find',
-  'test-path',
 ]);
 
 const GIT_METADATA_SUBCOMMANDS = new Set(['ls-files', 'check-ignore', 'status', 'log']);
@@ -143,7 +142,7 @@ const GREP_VERBS = new Set(['grep', 'egrep', 'fgrep', 'rg']);
 
 const EXAMPLE_PLACEHOLDER = 'SAMPLEFILE';
 function stripExamples(s) {
-  return s.replace(/\.env\.(example|sample|template|dist)[A-Za-z0-9_.-]*/gi, EXAMPLE_PLACEHOLDER);
+  return s.replace(/\.env\.(example|sample|template|schema|dist)[A-Za-z0-9_.-]*/gi, EXAMPLE_PLACEHOLDER);
 }
 
 const COPY_MOVE_VERBS = new Set(['cp', 'mv']);
@@ -151,14 +150,49 @@ const COPY_MOVE_FLAG = /^-[rRfnvpaiuLP]+$/;
 const COPY_MOVE_SAMPLE_SRC = new RegExp(`^([^\\s"'<>|;&$\`]*[/\\\\])?${EXAMPLE_PLACEHOLDER}$`);
 const COPY_MOVE_SEG_META = /[<>`$]/;
 
-function copyMoveSampleTargetIndex(seg, tokens, vi) {
+function copyMoveSampleTargetIndex(seg, tokens, vi, isPowerShellCmdlet = false) {
   if (COPY_MOVE_SEG_META.test(seg)) return -1;
   // 段内若含反斜杠但并非合法 Windows 路径分隔符（例如 \-t 伪装短选项）则回退全判
   if (/\\-/.test(seg)) return -1;
+  if (isPowerShellCmdlet) {
+    let namedSrcIdx = -1;
+    let namedDstIdx = -1;
+    const posIndices = [];
+    for (let i = vi + 1; i < tokens.length; i += 1) {
+      const rawTok = tokens[i];
+      if (rawTok.startsWith('-')) {
+        const flag = rawTok.toLowerCase();
+        if (flag === '-path' || flag === '-literalpath' || flag === '-lp') {
+          if (namedSrcIdx !== -1 || i + 1 >= tokens.length || tokens[i + 1].startsWith('-')) return -1;
+          namedSrcIdx = i + 1;
+          i += 1;
+          continue;
+        }
+        if (flag === '-destination' || flag === '-dest') {
+          if (namedDstIdx !== -1 || i + 1 >= tokens.length || tokens[i + 1].startsWith('-')) return -1;
+          namedDstIdx = i + 1;
+          i += 1;
+          continue;
+        }
+        if (flag === '-force' || flag === '-recurse') continue;
+        return -1;
+      }
+      posIndices.push(i);
+    }
+    let srcIdx = namedSrcIdx;
+    let dstIdx = namedDstIdx;
+    let p = 0;
+    if (srcIdx === -1 && p < posIndices.length) srcIdx = posIndices[p++];
+    if (dstIdx === -1 && p < posIndices.length) dstIdx = posIndices[p++];
+    if (p !== posIndices.length || srcIdx === -1 || dstIdx === -1) return -1;
+    const src = tokens[srcIdx].replace(/["']/g, '');
+    if (!COPY_MOVE_SAMPLE_SRC.test(src) || tokenHits(tokens[srcIdx], false)) return -1;
+    return dstIdx;
+  }
   const operands = [];
   for (let i = vi + 1; i < tokens.length; i += 1) {
     if (tokens[i].startsWith('-')) {
-      if (!COPY_MOVE_FLAG.test(tokens[i]) && !/^-(?:force|recurse)$/i.test(tokens[i])) return -1;
+      if (!COPY_MOVE_FLAG.test(tokens[i])) return -1;
       continue;
     }
     operands.push(i);
@@ -169,7 +203,7 @@ function copyMoveSampleTargetIndex(seg, tokens, vi) {
   return operands[1];
 }
 
-const COPY_MOVE_IMPERSONATION = /(^|[\s;&|(`{'"])((function\s+)?(cp|mv)\s*\(\s*\)|function\s+(cp|mv)([\s{(]|$)|alias\s+(-\S+\s+)*(cp|mv)=|Set-Alias\s+[^\n;]*(cp|mv)|(PATH|BASH_ENV|ENV|LD_[A-Za-z0-9_]+|DYLD_[A-Za-z0-9_]+)\+?=|\$env:PATH\s*\+?=)/i;
+const COPY_MOVE_IMPERSONATION = /(^|[\s;&|(`{'"])((function\s+)?(cp|mv)\s*\(\s*\)|function\s+(cp|mv)([\s{(]|$)|alias\s+(-\S+\s+)*(cp|mv)=|Set-Alias\s+[^\n;]*(cp|mv|Copy-Item|Move-Item|Test-Path)|(PATH|BASH_ENV|ENV|LD_[A-Za-z0-9_]+|DYLD_[A-Za-z0-9_]+)\+?=|\$env:PATH\s*\+?=)/i;
 let cmdImpersonatesCopyMove = false;
 
 const PREFIX_WRAPPERS = [
@@ -431,7 +465,7 @@ function gitSubcommandIndex(tokens, vi) {
 function isAllowedVerb(verb, tokens, vi) {
   const lower = verb.toLowerCase();
   // 注意：POSIX type 在 Windows CMD/PowerShell 中是文件内容读取命令（同 cat），绝不进 METADATA_VERBS！
-  if (METADATA_VERBS.has(verb) || (lower === 'test-path')) return true;
+  if (METADATA_VERBS.has(verb) || (lower === 'test-path' && !cmdImpersonatesCopyMove)) return true;
   if (lower === 'git' || lower === 'git.exe') {
     const subIdx = gitSubcommandIndex(tokens, vi);
     if (subIdx === -1) return false;
@@ -522,7 +556,8 @@ function checkSimple(seg) {
     checkTokens = tokens.slice(0, vi + 1).concat(grepTokensToCheck(tokens, vi));
   } else if ((COPY_MOVE_VERBS.has(verb) && rawVerb === verb && !cmdImpersonatesCopyMove)
       || ((lowerVerb === 'copy-item' || lowerVerb === 'move-item') && rawVerb.toLowerCase() === lowerVerb && !cmdImpersonatesCopyMove)) {
-    const ti = copyMoveSampleTargetIndex(seg, tokens, vi);
+    const isPsCmdlet = lowerVerb === 'copy-item' || lowerVerb === 'move-item';
+    const ti = copyMoveSampleTargetIndex(seg, tokens, vi, isPsCmdlet);
     if (ti !== -1) checkTokens = tokens.filter((_, i) => i !== ti);
   }
   return checkTokens.some((t) => tokenHits(t, scanNested));

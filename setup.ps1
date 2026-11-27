@@ -11,6 +11,7 @@ param(
   [Parameter(Position = 0)]
   [string]$Command = '',
   [string]$Target = '',
+  [string]$Out = '',
   [switch]$DryRun,
   [switch]$WithTests,
   [switch]$WithHarness,
@@ -27,11 +28,15 @@ $ErrorActionPreference = 'Stop'
 
 function Exit-Usage([string]$Message) {
   [Console]::Error.WriteLine("setup: $Message")
-  [Console]::Error.WriteLine('Usage: pwsh -File .\setup.ps1 [install|upgrade|uninstall|doctor] [-Target <dir> | <dir>] [-DryRun] [-WithTests] [-WithHarness] [-Force] [-Uninstall] [-HookForm string|exec]')
+  [Console]::Error.WriteLine('Usage: pwsh -File .\setup.ps1 [install|upgrade|uninstall|doctor|release] [-Target <dir> | <dir>] [-Out <path>] [-DryRun] [-WithTests] [-WithHarness] [-Force] [-Uninstall] [-HookForm string|exec]')
   exit 2
 }
 
 $KnownCommands = @('install', 'upgrade', 'uninstall', 'doctor', 'manifest', 'pack-check', 'release', 'help')
+$CommonTypoSubcommands = @(
+  'package', 'pack', 'bundle', 'check', 'verify', 'test', 'tests',
+  'lint', 'audit', 'status', 'init', 'update', 'remove', 'clean', 'version'
+)
 $AllowedForwardFlags = @(
   '--dry-run', '--with-tests', '--with-harness', '--force', '--uninstall',
   '--write', '--check', '--leak', '--json', '--strict-syntax', '-h', '--help'
@@ -52,6 +57,9 @@ if ($Command -ne '') {
   else {
     if ($resolvedTarget -ne '') {
       Exit-Usage "both positional target ($Command) and -Target ($resolvedTarget) were specified; pass only one"
+    }
+    if (($Command -cmatch '^[a-z]+$') -and ($CommonTypoSubcommands -contains $Command)) {
+      Exit-Usage "unknown subcommand '$Command' (pass -Target .\$Command to install into a folder named '$Command')"
     }
     $resolvedTarget = $Command
   }
@@ -79,8 +87,8 @@ for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
       $HookForm = $val
     }
     else {
-      [void]$forwardArgs.Add('--out')
-      [void]$forwardArgs.Add($val)
+      if ($Out -ne '') { Exit-Usage "duplicate out path specified ($Out vs $val)" }
+      $Out = $val
     }
     continue
   }
@@ -100,7 +108,8 @@ for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
   if ($arg.StartsWith('--out=')) {
     $val = $arg.Substring(6)
     if (-not $val) { Exit-Usage '--out= requires a non-empty value' }
-    [void]$forwardArgs.Add("--out=$val")
+    if ($Out -ne '') { Exit-Usage "duplicate out path specified ($Out vs $val)" }
+    $Out = $val
     continue
   }
   if ($arg.StartsWith('-')) {
@@ -115,6 +124,9 @@ for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
     continue
   }
   if ($resolvedTarget -eq '') {
+    if ($resolvedCmd -eq '' -and ($arg -cmatch '^[a-z]+$') -and ($CommonTypoSubcommands -contains $arg)) {
+      Exit-Usage "unknown subcommand '$arg' (pass -Target .\$arg to install into a folder named '$arg')"
+    }
     $resolvedTarget = $arg
   }
   else {
@@ -162,6 +174,10 @@ if ($Json -and -not ($forwardArgs -contains '--json')) { [void]$cliArgs.Add('--j
 if ($HookForm -ne '') {
   [void]$cliArgs.Add('--hook-form')
   [void]$cliArgs.Add($HookForm)
+}
+if ($Out -ne '') {
+  [void]$cliArgs.Add('--out')
+  [void]$cliArgs.Add($Out)
 }
 foreach ($fa in $forwardArgs) {
   [void]$cliArgs.Add($fa)

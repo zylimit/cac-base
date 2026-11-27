@@ -817,4 +817,252 @@ describe('installer & setup CLI contract', () => {
     assert.equal(rExplicitDry.status, 0, `explicit --target ./package --dry-run failed: ${rExplicitDry.stderr}`);
     assert.equal(fs.existsSync(path.join(workCwd, 'package')), false, '--dry-run must still leave zero files');
   });
+
+  test('[Regression v1.2.1] cross-mode switch (cac-base-link -> cac-base) detaches live OS directory links without polluting .claude/, strips cc-bridge.mjs hooks & retired files, and stays 100% idempotent across 3 consecutive installs', () => {
+    const target = nextDir('v121-cross-mode-from-link');
+    const siblingCcBase = path.resolve(REPO_ROOT, '..', 'cc-base');
+    const siblingLinkRepo = path.resolve(REPO_ROOT, '..', 'cac-base-link');
+    const siblingLinkCli = path.join(siblingLinkRepo, 'scripts', 'cac-base-link.mjs');
+
+    fs.mkdirSync(target, { recursive: true });
+
+    // 1. Seed .claude/ (using real sibling cc-base when present, or representative .claude/ tree in standalone CI)
+    const ccManifestTxt = path.join(siblingCcBase, '.claude', 'FRAMEWORK-MANIFEST.txt');
+    if (fs.existsSync(ccManifestTxt)) {
+      const srcClaude = path.join(siblingCcBase, '.claude');
+      for (const line of fs.readFileSync(ccManifestTxt, 'utf8').split(/\r?\n/)) {
+        if (!line || line.startsWith('#')) continue;
+        const [rel] = line.split('\t');
+        if (!rel) continue;
+        const srcFull = path.join(srcClaude, ...rel.split('/'));
+        if (!fs.existsSync(srcFull) || !fs.statSync(srcFull).isFile()) continue;
+        const dstFull = path.join(target, '.claude', ...rel.split('/'));
+        fs.mkdirSync(path.dirname(dstFull), { recursive: true });
+        fs.copyFileSync(srcFull, dstFull);
+      }
+      fs.copyFileSync(ccManifestTxt, path.join(target, '.claude', 'FRAMEWORK-MANIFEST.txt'));
+      if (fs.existsSync(path.join(srcClaude, 'settings.json'))) {
+        fs.copyFileSync(path.join(srcClaude, 'settings.json'), path.join(target, '.claude', 'settings.json'));
+      }
+    } else {
+      for (const skillName of ['dev-builder', 'test-builder', 'code-review']) {
+        const sk = path.join(target, '.claude', 'skills', skillName, 'SKILL.md');
+        fs.mkdirSync(path.dirname(sk), { recursive: true });
+        fs.writeFileSync(sk, `# cc-base ${skillName}\nDo not mutate!\n`, 'utf8');
+      }
+      for (const roleName of ['implementer', 'tester', 'code-reviewer']) {
+        const ag = path.join(target, '.claude', 'agents', `${roleName}.md`);
+        fs.mkdirSync(path.dirname(ag), { recursive: true });
+        fs.writeFileSync(ag, `# cc-base ${roleName}\nDo not mutate!\n`, 'utf8');
+      }
+      fs.writeFileSync(path.join(target, '.claude', 'CLAUDE.md'), '# cc-base constitution\n', 'utf8');
+    }
+
+    const snapshotDirRawSha = (dir) => {
+      const map = new Map();
+      const walk = (cur) => {
+        for (const ent of fs.readdirSync(cur, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+          const full = path.join(cur, ent.name);
+          const rel = path.relative(dir, full).replace(/\\/g, '/');
+          assert.equal(ent.isSymbolicLink(), false, `unexpected symlink inside ${dir}: ${rel}`);
+          if (ent.isDirectory()) walk(full);
+          else if (ent.isFile()) {
+            map.set(rel, createHash('sha256').update(fs.readFileSync(full)).digest('hex'));
+          }
+        }
+      };
+      walk(dir);
+      return map;
+    };
+
+    const initialSkillsSnap = snapshotDirRawSha(path.join(target, '.claude', 'skills'));
+    const initialAgentsSnap = snapshotDirRawSha(path.join(target, '.claude', 'agents'));
+    assert.ok(initialSkillsSnap.size > 0);
+    assert.ok(initialAgentsSnap.size > 0);
+
+    // 2. Install cac-base-link (real CLI when sibling repo exists; equivalent OS links + bridge manifest otherwise)
+    if (fs.existsSync(siblingLinkCli)) {
+      const rLink = runNode(siblingLinkCli, ['install', '--target', target, '--json']);
+      assert.equal(rLink.status, 0, `cac-base-link install failed: ${rLink.stderr}`);
+    } else {
+      fs.mkdirSync(path.join(target, '.cac', 'hooks', 'lib'), { recursive: true });
+      fs.mkdirSync(path.join(target, '.cac', 'rules'), { recursive: true });
+      fs.mkdirSync(path.join(target, '.cac', 'scripts'), { recursive: true });
+      const bridgeFiles = {
+        '.cac/hooks/cc-bridge.mjs': '// cc-bridge stub\n',
+        '.cac/hooks/lib/root.mjs': '// root stub\n',
+        '.cac/hooks/lib/ps-floor.mjs': '// ps-floor stub\n',
+        '.cac/rules/AGENTS.md': '@../../.claude/CLAUDE.md\n',
+        '.cac/scripts/doctor.mjs': '// link doctor stub\n',
+      };
+      const manifestItems = [];
+      for (const [rel, txt] of Object.entries(bridgeFiles)) {
+        const full = path.join(target, ...rel.split('/'));
+        fs.mkdirSync(path.dirname(full), { recursive: true });
+        fs.writeFileSync(full, txt, 'utf8');
+        const h = lfSha256(txt);
+        manifestItems.push({ path: rel, sha256: h.sha256, bytes: h.bytes });
+      }
+      fs.writeFileSync(
+        path.join(target, '.cac', 'FRAMEWORK-MANIFEST.json'),
+        JSON.stringify({ version: 1, engine: 'cac-base-link', seeded: [], files: manifestItems }, null, 2) + '\n',
+        'utf8',
+      );
+      fs.writeFileSync(
+        path.join(target, '.cac', 'settings.json'),
+        JSON.stringify({
+          permissions: { deny: ['Read(.env)'] },
+          hooks: {
+            SessionStart: [{ hooks: [{ type: 'command', command: 'node .cac/hooks/cc-bridge.mjs session-start' }] }],
+            PreCompact: [{ hooks: [{ type: 'command', command: 'node', args: ['.cac/hooks/cc-bridge.mjs', 'pre-compact'] }] }],
+          },
+        }, null, 2) + '\n',
+        'utf8',
+      );
+      for (const linkName of ['skills', 'agents']) {
+        const lp = path.join(target, '.cac', linkName);
+        const tp = path.join(target, '.claude', linkName);
+        if (process.platform === 'win32') fs.symlinkSync(tp, lp, 'junction');
+        else fs.symlinkSync(path.relative(path.dirname(lp), tp), lp, 'dir');
+      }
+    }
+
+    // Add custom user hook + custom permission in .cac/settings.json before switching to cac-base
+    const customHookScript = path.join(target, 'scripts', 'user-audit-hook.mjs');
+    fs.mkdirSync(path.dirname(customHookScript), { recursive: true });
+    fs.writeFileSync(customHookScript, 'process.exit(0);\n', 'utf8');
+    const settingsPath = path.join(target, '.cac', 'settings.json');
+    const linkSettings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    linkSettings.permissions = linkSettings.permissions || {};
+    linkSettings.permissions.deny = linkSettings.permissions.deny || [];
+    linkSettings.permissions.deny.push('Read(config/corp-vault.key)');
+    linkSettings.hooks.SessionStart[0].hooks.push({
+      type: 'command',
+      command: 'node scripts/user-audit-hook.mjs',
+    });
+    fs.writeFileSync(settingsPath, JSON.stringify(linkSettings, null, 2) + '\n', 'utf8');
+
+    assert.equal(fs.lstatSync(path.join(target, '.cac', 'skills')).isSymbolicLink(), true);
+    assert.equal(fs.lstatSync(path.join(target, '.cac', 'agents')).isSymbolicLink(), true);
+
+    // 3. Dry-run MUST NOT detach existing .cac/{skills,agents} OS links
+    const rDry = runNode(CAC_CLI, ['install', '--target', target, '--dry-run', '--json']);
+    assert.equal(rDry.status, 0, rDry.stderr);
+    assert.equal(fs.lstatSync(path.join(target, '.cac', 'skills')).isSymbolicLink(), true, '--dry-run must not detach .cac/skills');
+    assert.equal(fs.lstatSync(path.join(target, '.cac', 'agents')).isSymbolicLink(), true, '--dry-run must not detach .cac/agents');
+
+    // 4. Execute cac-base install (Run #1: cross-mode switch from cac-base-link -> cac-base)
+    const rSwitch = runNode(CAC_CLI, ['install', '--target', target, '--json']);
+    assert.equal(rSwitch.status, 0, `cross-mode install failed: ${rSwitch.stderr}`);
+    const switchReport = JSON.parse(rSwitch.stdout.trim());
+    assert.equal(switchReport.status, 'ok');
+    assert.deepEqual(switchReport.conflicts, [], 'unmodified cac-base-link managed files must upgrade without false conflicts');
+
+    // Verify .cac/skills and .cac/agents are now physical directories (not symlinks/Junctions)
+    assert.equal(fs.lstatSync(path.join(target, '.cac', 'skills')).isSymbolicLink(), false);
+    assert.equal(fs.lstatSync(path.join(target, '.cac', 'skills')).isDirectory(), true);
+    assert.equal(fs.lstatSync(path.join(target, '.cac', 'agents')).isSymbolicLink(), false);
+    assert.equal(fs.lstatSync(path.join(target, '.cac', 'agents')).isDirectory(), true);
+
+    // Verify retired cac-base-link files and cc-bridge.mjs hooks were completely cleaned up
+    for (const retiredRel of ['.cac/hooks/cc-bridge.mjs', '.cac/hooks/lib/root.mjs', '.cac/hooks/lib/ps-floor.mjs']) {
+      assert.equal(fs.existsSync(path.join(target, ...retiredRel.split('/'))), false, `retired file must be removed: ${retiredRel}`);
+    }
+
+    const switchedSettings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    assert.ok(switchedSettings.permissions.deny.includes('Read(config/corp-vault.key)'));
+    const allHooksAfter = Object.values(switchedSettings.hooks || {})
+      .flatMap((groups) => (Array.isArray(groups) ? groups : []))
+      .flatMap((g) => (Array.isArray(g.hooks) ? g.hooks : []));
+    assert.equal(
+      allHooksAfter.some((h) => `${h.command || ''} ${(h.args || []).join(' ')}`.includes('cc-bridge.mjs')),
+      false,
+      'all cc-bridge.mjs hook entries must be stripped',
+    );
+    assert.equal(
+      allHooksAfter.some((h) => h.command === 'node scripts/user-audit-hook.mjs'),
+      true,
+      'user custom hook must survive cross-mode switch',
+    );
+
+    // Verify .claude/skills/** and .claude/agents/** are 100% byte-for-byte untouched with zero .bak/.cac-base-new garbage
+    const afterSkillsSnap = snapshotDirRawSha(path.join(target, '.claude', 'skills'));
+    const afterAgentsSnap = snapshotDirRawSha(path.join(target, '.claude', 'agents'));
+    assert.deepEqual([...afterSkillsSnap.entries()], [...initialSkillsSnap.entries()], '.claude/skills must be 100% byte-identical');
+    assert.deepEqual([...afterAgentsSnap.entries()], [...initialAgentsSnap.entries()], '.claude/agents must be 100% byte-identical');
+
+    // 5. Consecutive 3x idempotent reinstall verification (Run #2 and Run #3)
+    for (let round = 2; round <= 3; round += 1) {
+      const rIdem = runNode(CAC_CLI, ['install', '--target', target, '--json']);
+      assert.equal(rIdem.status, 0, `idempotent round ${round} failed: ${rIdem.stderr}`);
+      const idemObj = JSON.parse(rIdem.stdout.trim());
+      assert.equal(idemObj.status, 'ok');
+      assert.equal(idemObj.stats.create, 0, `round ${round} expected create=0`);
+      assert.equal(idemObj.stats.update, 0, `round ${round} expected update=0`);
+      assert.equal(idemObj.stats.conflict, 0, `round ${round} expected conflict=0`);
+    }
+
+    const rDoc = runNode(DOCTOR_CLI, [target, '--json']);
+    assert.equal(rDoc.status, 0, rDoc.stdout + rDoc.stderr);
+  });
+
+  test('[Regression v1.2.1] dangling directory symlinks, dangling .runtime symlink, leaf file symlink, and blocking file at directory path self-heal without traversing into external files', () => {
+    const target = nextDir('v121-dangling-and-leaf-symlinks');
+    const externalSafeDir = nextDir('v121-external-do-not-touch');
+    fs.mkdirSync(externalSafeDir, { recursive: true });
+
+    const externalPreciousFile = path.join(externalSafeDir, 'precious-external.md');
+    const externalPreciousBytes = Buffer.from('# External Precious File — NEVER OVERWRITE THROUGH LEAF SYMLINK!\n', 'utf8');
+    fs.writeFileSync(externalPreciousFile, externalPreciousBytes);
+
+    fs.mkdirSync(path.join(target, '.cac', 'rules'), { recursive: true });
+
+    // 1. Dangling directory symlink at .cac/skills & dangling symlink at .cac/.runtime
+    const deadSkillsTarget = path.join(TMP_BASE, 'nonexistent-dead-dir', 'skills');
+    const deadRuntimeTarget = path.join(TMP_BASE, 'nonexistent-dead-dir', 'runtime');
+    if (process.platform === 'win32') {
+      fs.symlinkSync(deadSkillsTarget, path.join(target, '.cac', 'skills'), 'junction');
+      fs.symlinkSync(deadRuntimeTarget, path.join(target, '.cac', '.runtime'), 'junction');
+    } else {
+      fs.symlinkSync(deadSkillsTarget, path.join(target, '.cac', 'skills'), 'dir');
+      fs.symlinkSync(deadRuntimeTarget, path.join(target, '.cac', '.runtime'), 'dir');
+    }
+
+    // 2. Blocking regular file where directory .cac/agents needs to be created
+    const blockingAgentsPath = path.join(target, '.cac', 'agents');
+    fs.writeFileSync(blockingAgentsPath, 'blocking-regular-file-at-agents\n', 'utf8');
+
+    // 3. Live leaf file symlink at .cac/rules/AGENTS.md pointing to externalPreciousFile
+    if (process.platform !== 'win32') {
+      fs.symlinkSync(externalPreciousFile, path.join(target, '.cac', 'rules', 'AGENTS.md'));
+    } else {
+      fs.copyFileSync(externalPreciousFile, path.join(target, '.cac', 'rules', 'AGENTS.md'));
+    }
+
+    // 4. Leftover .cac-link-new sidecar should not break install or doctor
+    fs.writeFileSync(path.join(target, '.cac', 'rules', 'AGENTS.md.cac-link-new'), '# old link sidecar\n', 'utf8');
+
+    // Execute cac-base install --force
+    const rInst = runNode(CAC_CLI, ['install', '--force', '--target', target, '--json']);
+    assert.equal(rInst.status, 0, `self-healing install --force failed: ${rInst.stderr}`);
+
+    // Verify externalPreciousFile was NEVER overwritten through the leaf symlink!
+    assert.equal(
+      Buffer.compare(fs.readFileSync(externalPreciousFile), externalPreciousBytes),
+      0,
+      'external file targeted by leaf symlink must NEVER be mutated!',
+    );
+
+    // Verify .cac/skills, .cac/agents, .cac/.runtime, and .cac/rules/AGENTS.md are real physical entries
+    assert.equal(fs.lstatSync(path.join(target, '.cac', 'skills')).isSymbolicLink(), false);
+    assert.equal(fs.lstatSync(path.join(target, '.cac', 'skills')).isDirectory(), true);
+    assert.equal(fs.lstatSync(path.join(target, '.cac', 'agents')).isSymbolicLink(), false);
+    assert.equal(fs.lstatSync(path.join(target, '.cac', 'agents')).isDirectory(), true);
+    assert.equal(fs.existsSync(`${blockingAgentsPath}.bak`), true, 'blocking file at .cac/agents must be backed up to .cac/agents.bak');
+    assert.equal(fs.lstatSync(path.join(target, '.cac', 'rules', 'AGENTS.md')).isSymbolicLink(), false);
+    assert.equal(fs.lstatSync(path.join(target, '.cac', 'rules', 'AGENTS.md')).isFile(), true);
+
+    const rDoc = runNode(DOCTOR_CLI, [target, '--json']);
+    assert.equal(rDoc.status, 0, rDoc.stdout + rDoc.stderr);
+  });
 });

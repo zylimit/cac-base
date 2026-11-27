@@ -8,7 +8,7 @@
 - **全流程产品工程闭环（22 个原生 Skill + 9 个专职 Sub-Agent）**：覆盖需求澄清（`product-spec-builder`）、架构与质量属性（`arch-designer` / `dfx-designer`）、界面规范与原型（`design-brief-builder` / `design-maker`）、开发计划（`dev-planner`）、按 Task 风险三档推进的开发审查测试闭环（`dev-builder` / `code-review` / `test-builder` / `bug-fixer` / `red-blue-review`）以及受控发布收尾（`release-builder` / `branch-finisher`）。
 - **三档强度（`fast / standard / strict`）与不可旁路安全地板**：内置 Bash + PowerShell 双壳硬化的密钥外泄闸（`secret-exfil-guard`）、危险命令闸（`dangerous-command-guard`）、发布前置闸（`release-gate`）与主从写码隔离闸（`no-direct-code-guard`）；修改 `.cac/` 家底自动升 `strict` 档。
 - **活文档契约与人读工程文档（`readable-docs`）**：`project-status.mjs`、`progress-archive.mjs`、`plan-archive.mjs` 让 `Product-Spec.md`、`DEV-PLAN.md`、`progress.md` 始终保持精炼现行态；`readable-docs.mjs` 从数据库 DDL、业务源码与规格文档自动生成零丢字、带指纹核对的离线静态网页文档。
-- **纯 Node >= 20 零依赖跨平台内核**：Windows PowerShell 无需安装 Git Bash、`jq` 或 Python 即可完整运行安装、升级、Hook 守门、`doctor` 体检与全量自测。
+- **纯 Node >= 20 零依赖跨平台内核**：Windows PowerShell 无需安装 Git Bash、`jq` 或 Python 即可完整运行安装、升级、Hook 守门、`doctor` 体检与全量自测；安装器原生支持幂等重复安装、三路 SHA256 无损升级、崩溃死锁接管、悬空死链自愈，以及从 `cac-base-link` 链接版一键无损切回独立版 `cac-base`（`lstat` 级安全拆链、自动剥离 `cc-bridge.mjs` 桥接 Hook 并退役旧版受管文件，绝不穿透符号链接/Junction 污染同仓其他工具目录）。
 
 ## 快速安装
 

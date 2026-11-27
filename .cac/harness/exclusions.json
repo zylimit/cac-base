@@ -48,6 +48,7 @@
     ".cac/EVOLUTION.md",
     "**/*.bak",
     "**/*.cac-base-new",
+    "**/*.cac-link-new",
     "**/*.framework-new",
     "**/*.swp",
     "**/.DS_Store",

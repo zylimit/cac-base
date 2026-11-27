@@ -382,7 +382,13 @@ function isReleaseExcludedRel(rel) {
   }
   if (p.startsWith('docs/') && p !== 'docs/HOST-CONTRACT.md') return true;
   if (
+    p.startsWith('.serena/') ||
+    p.startsWith('node_modules/') ||
+    p.startsWith('harness-state/') ||
+    p.startsWith('.bundled-cc-base/') ||
     p.startsWith('.cac/.runtime/') ||
+    p.startsWith('.cac/local/') ||
+    p.startsWith('.cac/harness-state/') ||
     p.startsWith('.cac/evidence/') ||
     p.startsWith('.cac/agent-memory/') ||
     p.startsWith('.cac/research/') ||
@@ -398,8 +404,14 @@ function isReleaseExcludedRel(rel) {
   if (p.startsWith('.cac/feedback/') && !p.startsWith('.cac/feedback/templates/')) {
     return true;
   }
-  if (/\.(?:bak|cac-base-new|framework-new|swp)$/.test(p)) return true;
-  if (/(?:^|\/)(?:\.DS_Store|Thumbs\.db|signals\.jsonl|\.needs-review.*)$/.test(p)) return true;
+  if (/\.(?:bak|cac-base-new|cac-link-new|framework-new|swp)$/.test(p) || /\.bak-/.test(p)) return true;
+  if (
+    /(?:^|\/)(?:\.DS_Store|Thumbs\.db|signals\.jsonl|\.needs-review.*|settings\.local\.json|settings-windows\.json|\.credentials\.json)$/.test(
+      p,
+    )
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -429,144 +441,151 @@ function handleRelease(version, outOverride) {
   const stageDir = path.join(tmpBase, pkgName);
   const verifyDir = path.join(tmpBase, 'verify-unpack');
 
+  let exitCode = 1;
   try {
-    fs.mkdirSync(stageDir, { recursive: true });
+    releaseFlow: {
+      fs.mkdirSync(stageDir, { recursive: true });
 
-    // Enumerate tracked files via git ls-files -z if git repo, else walk directory
-    let sourceRelList = [];
-    const gitLs = spawnSync('git', ['-c', 'core.quotePath=false', 'ls-files', '-z'], {
-      cwd: FRAMEWORK_ROOT,
-      shell: false,
-      windowsHide: true,
-      maxBuffer: 64 * 1024 * 1024,
-    });
-    if (gitLs.status === 0 && gitLs.stdout && gitLs.stdout.length > 0) {
-      sourceRelList = gitLs.stdout
-        .toString('utf8')
-        .split('\0')
-        .map((s) => toPosix(s.trim()))
-        .filter(Boolean);
-    } else {
-      sourceRelList = walkRegularFiles(FRAMEWORK_ROOT, FRAMEWORK_ROOT).filter(
-        (p) => !p.startsWith('.git/') && !p.startsWith('node_modules/'),
+      // Enumerate tracked files via git ls-files -z if git repo, else walk directory
+      let sourceRelList = [];
+      const gitLs = spawnSync('git', ['-c', 'core.quotePath=false', 'ls-files', '-z'], {
+        cwd: FRAMEWORK_ROOT,
+        shell: false,
+        windowsHide: true,
+        maxBuffer: 64 * 1024 * 1024,
+      });
+      if (gitLs.status === 0 && gitLs.stdout && gitLs.stdout.length > 0) {
+        sourceRelList = gitLs.stdout
+          .toString('utf8')
+          .split('\0')
+          .map((s) => toPosix(s.trim()))
+          .filter(Boolean);
+      } else {
+        sourceRelList = walkRegularFiles(FRAMEWORK_ROOT, FRAMEWORK_ROOT).filter(
+          (p) => !p.startsWith('.git/') && !p.startsWith('node_modules/'),
+        );
+      }
+      if (fs.existsSync(path.join(FRAMEWORK_ROOT, MANIFEST_REL_PATH)) && !sourceRelList.includes(MANIFEST_REL_PATH)) {
+        sourceRelList.push(MANIFEST_REL_PATH);
+      }
+
+      for (const rel of sourceRelList) {
+        if (isReleaseExcludedRel(rel)) continue;
+        if (rel === '.cac/EVOLUTION.md') continue;
+        const srcFull = path.join(FRAMEWORK_ROOT, rel);
+        if (!fs.existsSync(srcFull) || !fs.statSync(srcFull).isFile()) continue;
+        const dstFull = path.join(stageDir, rel);
+        fs.mkdirSync(path.dirname(dstFull), { recursive: true });
+        fs.copyFileSync(srcFull, dstFull);
+      }
+
+      // Seed clean FEEDBACK-INDEX.md and clean EVOLUTION.md into release bundle
+      const fbTpl = path.join(FRAMEWORK_ROOT, '.cac', 'feedback', 'templates', 'feedback-index-template.md');
+      const fbDest = path.join(stageDir, '.cac', 'feedback', 'FEEDBACK-INDEX.md');
+      fs.mkdirSync(path.dirname(fbDest), { recursive: true });
+      fs.writeFileSync(
+        fbDest,
+        fs.existsSync(fbTpl)
+          ? fs.readFileSync(fbTpl, 'utf8')
+          : '# FEEDBACK-INDEX — 项目 AI 行为修正索引\n',
+        'utf8',
       );
-    }
-    if (fs.existsSync(path.join(FRAMEWORK_ROOT, MANIFEST_REL_PATH)) && !sourceRelList.includes(MANIFEST_REL_PATH)) {
-      sourceRelList.push(MANIFEST_REL_PATH);
-    }
+      fs.writeFileSync(
+        path.join(stageDir, '.cac', 'EVOLUTION.md'),
+        '# EVOLUTION.md — 反馈聚类与规则进化记录\n',
+        'utf8',
+      );
 
-    for (const rel of sourceRelList) {
-      if (isReleaseExcludedRel(rel)) continue;
-      if (rel === '.cac/EVOLUTION.md') continue;
-      const srcFull = path.join(FRAMEWORK_ROOT, rel);
-      if (!fs.existsSync(srcFull) || !fs.statSync(srcFull).isFile()) continue;
-      const dstFull = path.join(stageDir, rel);
-      fs.mkdirSync(path.dirname(dstFull), { recursive: true });
-      fs.copyFileSync(srcFull, dstFull);
-    }
+      const defaultArchive = path.join(os.tmpdir(), `${pkgName}.tar.gz`);
+      const outPath = outOverride ? path.resolve(outOverride) : defaultArchive;
+      const exportAsDir = outPath.endsWith('.dir');
 
-    // Seed clean FEEDBACK-INDEX.md and clean EVOLUTION.md into release bundle
-    const fbTpl = path.join(FRAMEWORK_ROOT, '.cac', 'feedback', 'templates', 'feedback-index-template.md');
-    const fbDest = path.join(stageDir, '.cac', 'feedback', 'FEEDBACK-INDEX.md');
-    fs.mkdirSync(path.dirname(fbDest), { recursive: true });
-    fs.writeFileSync(
-      fbDest,
-      fs.existsSync(fbTpl)
-        ? fs.readFileSync(fbTpl, 'utf8')
-        : '# FEEDBACK-INDEX — 项目 AI 行为修正索引\n',
-      'utf8',
-    );
-    fs.writeFileSync(
-      path.join(stageDir, '.cac', 'EVOLUTION.md'),
-      '# EVOLUTION.md — 反馈聚类与规则进化记录\n',
-      'utf8',
-    );
+      let unpackRoot = stageDir;
+      if (exportAsDir) {
+        fs.rmSync(outPath, { recursive: true, force: true });
+        fs.cpSync(stageDir, outPath, { recursive: true });
+        unpackRoot = outPath;
+      } else {
+        fs.mkdirSync(path.dirname(outPath), { recursive: true });
+        fs.rmSync(outPath, { force: true });
+        const tarCmd = resolveTarCommand();
+        const tmpArchiveName = `${pkgName}.tar.gz`;
+        const tmpArchivePath = path.join(tmpBase, tmpArchiveName);
+        const packRes = spawnSync(tarCmd.bin, [...tarCmd.extraFlags, '-czf', tmpArchiveName, pkgName], {
+          cwd: tmpBase,
+          encoding: 'utf8',
+          shell: false,
+          windowsHide: true,
+        });
+        if (packRes.error || packRes.status !== 0) {
+          process.stderr.write(`release: tar 打包失败: ${packRes.error?.message || packRes.stderr}\n`);
+          exitCode = 1;
+          break releaseFlow;
+        }
 
-    const defaultArchive = path.join(os.tmpdir(), `${pkgName}.tar.gz`);
-    const outPath = outOverride ? path.resolve(outOverride) : defaultArchive;
-    const exportAsDir = outPath.endsWith('.dir');
-
-    let unpackRoot = stageDir;
-    if (exportAsDir) {
-      fs.rmSync(outPath, { recursive: true, force: true });
-      fs.cpSync(stageDir, outPath, { recursive: true });
-      unpackRoot = outPath;
-    } else {
-      fs.mkdirSync(path.dirname(outPath), { recursive: true });
-      fs.rmSync(outPath, { force: true });
-      const tarCmd = resolveTarCommand();
-      const tmpArchiveName = `${pkgName}.tar.gz`;
-      const tmpArchivePath = path.join(tmpBase, tmpArchiveName);
-      const packRes = spawnSync(tarCmd.bin, [...tarCmd.extraFlags, '-czf', tmpArchiveName, pkgName], {
-        cwd: tmpBase,
-        encoding: 'utf8',
-        shell: false,
-        windowsHide: true,
-      });
-      if (packRes.error || packRes.status !== 0) {
-        process.stderr.write(`release: tar 打包失败: ${packRes.error?.message || packRes.stderr}\n`);
-        process.exit(1);
+        // Unpack into clean verify directory using relative paths (avoids MSYS GNU tar Windows C: remote-host misparse)
+        fs.mkdirSync(verifyDir, { recursive: true });
+        const unpackRes = spawnSync(tarCmd.bin, [...tarCmd.extraFlags, '-xzf', tmpArchiveName, '-C', 'verify-unpack'], {
+          cwd: tmpBase,
+          encoding: 'utf8',
+          shell: false,
+          windowsHide: true,
+        });
+        if (unpackRes.error || unpackRes.status !== 0) {
+          process.stderr.write(`release: 解包校验失败: ${unpackRes.error?.message || unpackRes.stderr}\n`);
+          exitCode = 1;
+          break releaseFlow;
+        }
+        fs.copyFileSync(tmpArchivePath, outPath);
+        unpackRoot = path.join(verifyDir, pkgName);
       }
 
-      // Unpack into clean verify directory using relative paths (avoids MSYS GNU tar Windows C: remote-host misparse)
-      fs.mkdirSync(verifyDir, { recursive: true });
-      const unpackRes = spawnSync(tarCmd.bin, [...tarCmd.extraFlags, '-xzf', tmpArchiveName, '-C', 'verify-unpack'], {
-        cwd: tmpBase,
-        encoding: 'utf8',
-        shell: false,
-        windowsHide: true,
+      // Verify unpacked bundle: 1) no forbidden private files, 2) zero content leaks
+      const unpackedFiles = walkRegularFiles(unpackRoot, unpackRoot);
+      const leakedFiles = unpackedFiles.filter((rel) => {
+        if (rel === '.cac/feedback/FEEDBACK-INDEX.md') return false;
+        return isReleaseExcludedRel(rel);
       });
-      if (unpackRes.error || unpackRes.status !== 0) {
-        process.stderr.write(`release: 解包校验失败: ${unpackRes.error?.message || unpackRes.stderr}\n`);
-        process.exit(1);
+
+      const contentHits = [];
+      for (const rel of unpackedFiles) {
+        const full = path.join(unpackRoot, rel);
+        const buf = fs.readFileSync(full);
+        if (buf.includes(0)) continue;
+        contentHits.push(...scanTextForLeaks(rel, buf.toString('utf8')));
       }
-      fs.copyFileSync(tmpArchivePath, outPath);
-      unpackRoot = path.join(verifyDir, pkgName);
-    }
 
-    // Verify unpacked bundle: 1) no forbidden private files, 2) zero content leaks
-    const unpackedFiles = walkRegularFiles(unpackRoot, unpackRoot);
-    const leakedFiles = unpackedFiles.filter((rel) => {
-      if (rel === '.cac/feedback/FEEDBACK-INDEX.md') return false;
-      return isReleaseExcludedRel(rel);
-    });
+      if (leakedFiles.length > 0 || contentHits.length > 0) {
+        if (!exportAsDir) fs.rmSync(outPath, { force: true });
+        process.stdout.write(
+          JSON.stringify({
+            status: 'violation',
+            code: 1,
+            summary: `release leak check failed: leakedFiles=${leakedFiles.length}, contentHits=${contentHits.length}`,
+            leakedFiles: leakedFiles.slice(0, 20),
+            contentHits: contentHits.slice(0, 20),
+          }) + '\n',
+        );
+        exitCode = 1;
+        break releaseFlow;
+      }
 
-    const contentHits = [];
-    for (const rel of unpackedFiles) {
-      const full = path.join(unpackRoot, rel);
-      const buf = fs.readFileSync(full);
-      if (buf.includes(0)) continue;
-      contentHits.push(...scanTextForLeaks(rel, buf.toString('utf8')));
-    }
-
-    if (leakedFiles.length > 0 || contentHits.length > 0) {
-      if (!exportAsDir) fs.rmSync(outPath, { force: true });
       process.stdout.write(
         JSON.stringify({
-          status: 'violation',
-          code: 1,
-          summary: `release leak check failed: leakedFiles=${leakedFiles.length}, contentHits=${contentHits.length}`,
-          leakedFiles: leakedFiles.slice(0, 20),
-          contentHits: contentHits.slice(0, 20),
+          status: 'ok',
+          code: 0,
+          version,
+          artifact: toPosix(outPath),
+          files: unpackedFiles.length,
+          summary: `release ${version}: verified ${unpackedFiles.length} unpacked files with 0 leaks`,
         }) + '\n',
       );
-      process.exit(1);
+      exitCode = 0;
     }
-
-    process.stdout.write(
-      JSON.stringify({
-        status: 'ok',
-        code: 0,
-        version,
-        artifact: toPosix(outPath),
-        files: unpackedFiles.length,
-        summary: `release ${version}: verified ${unpackedFiles.length} unpacked files with 0 leaks`,
-      }) + '\n',
-    );
-    process.exit(0);
   } finally {
     fs.rmSync(tmpBase, { recursive: true, force: true });
   }
+  process.exit(exitCode);
 }
 
 function main() {
